@@ -1,0 +1,19 @@
+# Dependências Node.js
+node_modules/
+dist/
+
+# Ambiente Virtual Python
+venv/
+__pycache__/
+
+# Segredos (NUNCA SUBIR PRO GITHUB)
+.env
+
+# Banco de Dados e Dados Locais
+data/
+*.sqlite
+*.db
+
+# Logs do PM2 e Erros
+*.log
+
