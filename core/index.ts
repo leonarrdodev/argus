@@ -1,3 +1,4 @@
+import { startServer } from './server.js';
 import { Client, GatewayIntentBits } from 'discord.js';
 import * as dotenv from 'dotenv';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import { promisify } from 'node:util';
 import { getSystemStats } from './monitor.js';
 import { askBrain } from './brainBridge.js';
 import { repository } from './database.js';
+
 
 dotenv.config();
 
@@ -23,6 +25,7 @@ const argus = new Client({
 
 argus.once('ready', () => {
     console.log(`[ARGUS] Online, com Memória SQLite ativa e pronto para aprender.`);
+    startServer(3000); // Inicia a interface na porta 3000
 });
 
 argus.on('messageCreate', async (message) => {
@@ -174,3 +177,5 @@ argus.on('messageCreate', async (message) => {
     }
 });
 argus.login(process.env.DISCORD_TOKEN);
+
+startServer(5000)

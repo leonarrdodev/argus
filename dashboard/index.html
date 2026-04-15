@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HQ Argus - Dashboard de Controle</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#0f172a',
+                        panelBg: '#1e293b',
+                        userBubble: '#475569',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Scrollbar personalizada */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        /* Estilos customizados para o Markdown do Argus */
+        .markdown-bot p { margin-bottom: 0.75rem; }
+        .markdown-bot p:last-child { margin-bottom: 0; }
+        .markdown-bot strong { font-weight: 700; color: #93c5fd; } /* Negrito em azul claro */
+        .markdown-bot ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 0.75rem; }
+        .markdown-bot ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 0.75rem; }
+        .markdown-bot code { background-color: rgba(0,0,0,0.4); padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-family: monospace; color: #e2e8f0; }
+        .markdown-bot pre { background-color: rgba(0,0,0,0.5); padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-bottom: 1rem; }
+        .markdown-bot pre code { background-color: transparent; padding: 0; }
+        .markdown-bot h1, .markdown-bot h2, .markdown-bot h3 { font-weight: bold; color: #bfdbfe; margin-top: 1rem; margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body class="bg-darkBg text-slate-300 h-screen overflow-hidden flex flex-col font-sans">
+
+    <header class="flex items-center justify-between px-6 py-4 border-b border-slate-700 bg-panelBg shadow-md">
+        <div class="flex items-center gap-6">
+            <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-owl text-blue-500"></i> HQ Argus
+            </h1>
+            <nav class="flex gap-4">
+                <button class="bg-slate-700 text-white px-4 py-1 rounded-md text-sm font-medium">Chat de Análise</button>
+                <button class="text-slate-400 hover:text-white px-4 py-1 text-sm transition">Meu Perfil</button>
+                <button class="text-slate-400 hover:text-white px-4 py-1 text-sm transition">Configurações</button>
+            </nav>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="flex h-2 w-2 rounded-full bg-green-500"></span>
+            <span class="text-xs font-mono text-slate-400">SERVER ONLINE: 192.168.1.200</span>
+        </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden p-4 gap-4">
+        
+        <section class="flex-1 flex flex-col bg-panelBg rounded-xl border border-slate-700 overflow-hidden shadow-2xl">
+            
+            <div id="chatWindow" class="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+                <div class="flex gap-4 max-w-3xl mb-2">
+                    <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">
+                        <i class="fa-solid fa-robot"></i>
+                    </div>
+                    <div>
+                        <span class="text-[10px] text-slate-500 font-bold mb-1 block">ARGUS</span>
+                        <div class="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30 text-white p-4 shadow-sm text-sm">
+                            <p>Sistemas prontos, Leo. A conexão com o Compaq 510 está estável. O tradutor de Markdown foi inicializado com sucesso.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-6 py-2 border-t border-slate-700 flex items-center gap-6 text-xs font-bold text-slate-500 bg-slate-800/50">
+                <span class="tracking-widest opacity-50">CONEXÃO:</span>
+                <button id="btnNuvem" class="text-blue-400 flex items-center gap-2 transition hover:text-blue-300">
+                    <i class="fa-solid fa-cloud"></i> CÉREBRO (IA)
+                </button>
+                <button id="btnDebian" class="text-slate-500 flex items-center gap-2 transition hover:text-green-400">
+                    <i class="fa-solid fa-server"></i> DEBIAN (LOCAL)
+                </button>
+            </div>
+
+            <div class="p-4 bg-panelBg border-t border-slate-700">
+                <div class="relative flex items-center bg-slate-800 rounded-lg border border-slate-600 p-1 focus-within:border-blue-500 transition shadow-inner">
+                    <button class="p-3 text-slate-400 hover:text-white transition"><i class="fa-solid fa-paperclip"></i></button>
+                    <input type="text" id="inputMsg" placeholder="Escreva um comando ou pergunte algo ao Cérebro..." class="flex-1 bg-transparent border-none text-white focus:outline-none p-2 text-sm autocomplete-off">
+                    <button id="btnEnviar" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-md transition font-bold text-sm mr-1">ENVIAR</button>
+                </div>
+            </div>
+        </section>
+
+        <aside class="w-80 flex flex-col gap-4 overflow-y-auto">
+            
+            <div class="bg-panelBg rounded-xl border border-slate-700 p-5 shadow-lg">
+                <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Painel do Sistema</h2>
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-slate-700 to-slate-500 flex items-center justify-center text-white text-xl font-bold shadow-md">L</div>
+                    <div>
+                        <p class="text-white font-bold">Leo</p>
+                        <p class="text-[10px] text-blue-400 font-mono uppercase">Admin - Eng. Backend</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-panelBg rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col">
+                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 text-center">Distribuição de Skills</h3>
+                <div class="w-full h-56">
+                    <canvas id="competencyChart"></canvas>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-panelBg rounded-xl border border-slate-700 p-4 shadow-lg text-center border-b-2 border-b-blue-500">
+                    <i class="fa-solid fa-database text-blue-500 text-lg mb-1"></i>
+                    <p class="text-[10px] text-slate-500 uppercase font-bold">Docs</p>
+                    <p class="text-xl font-black text-white">312</p>
+                </div>
+                <div class="bg-panelBg rounded-xl border border-slate-700 p-4 shadow-lg text-center border-b-2 border-b-indigo-500">
+                    <i class="fa-solid fa-microchip text-indigo-500 text-lg mb-1"></i>
+                    <p class="text-[10px] text-slate-500 uppercase font-bold">Projetos</p>
+                    <p class="text-xl font-black text-white">5</p>
+                </div>
+            </div>
+
+        </aside>
+    </main>
+
+    <script>
+        console.log("[SISTEMA] Iniciando painel neural...");
+
+        const ctx = document.getElementById('competencyChart').getContext('2d');
+        Chart.defaults.color = '#64748b';
+        
+        new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: ['Node.js', 'Python', 'SQL', 'Linux', 'Redes', 'Arquitetura'],
+                datasets: [{
+                    data: [85, 90, 80, 85, 75, 80],
+                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                    borderColor: 'rgba(59, 130, 246, 0.8)',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#3b82f6'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                        angleLines: { color: 'rgba(148, 163, 184, 0.1)' },
+                        ticks: { display: false },
+                        pointLabels: { font: { size: 10 }, color: '#94a3b8' }
+                    }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        const socket = io();
+        const chatWindow = document.getElementById('chatWindow');
+        const inputMsg = document.getElementById('inputMsg');
+        const btnEnviar = document.getElementById('btnEnviar');
+
+        marked.setOptions({ breaks: true, gfm: true });
+
+        function appendMessage(texto, user) {
+            const div = document.createElement('div');
+            const isLeo = user === 'Leo';
+            
+            div.className = isLeo ? 'flex gap-4 max-w-3xl self-end flex-row-reverse mb-6' : 'flex gap-4 max-w-3xl mb-6';
+            const conteudo = isLeo ? `<p>${texto}</p>` : `<div class="markdown-bot">${marked.parse(texto)}</div>`;
+
+            div.innerHTML = `
+                <div class="w-8 h-8 rounded-full ${isLeo ? 'bg-slate-600' : 'bg-blue-600'} flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">
+                    ${isLeo ? 'L' : '<i class="fa-solid fa-robot"></i>'}
+                </div>
+                <div>
+                    <span class="text-[10px] text-slate-500 font-bold mb-1 block ${isLeo ? 'text-right' : ''}">${user.toUpperCase()}</span>
+                    <div class="${isLeo ? 'bg-userBubble rounded-l-xl rounded-br-xl' : 'bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30'} text-white p-4 shadow-sm text-sm">
+                        ${conteudo}
+                    </div>
+                </div>`;
+            
+            chatWindow.appendChild(div);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        function mostrarPensando() {
+            console.log("[UI] Tentando desenhar a bolha de carregamento...");
+            if (document.getElementById('argus-thinking')) {
+                console.log("[UI] A bolha já existe na tela, ignorando.");
+                return;
+            }
+
+            const div = document.createElement('div');
+            div.id = 'argus-thinking';
+            div.className = 'flex gap-4 max-w-3xl mb-6 animate-pulse';
+            
+            div.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">
+                    <i class="fa-solid fa-robot"></i>
+                </div>
+                <div>
+                    <span class="text-[10px] text-slate-500 font-bold mb-1 block">ARGUS</span>
+                    <div class="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30 text-blue-300 p-4 shadow-sm text-sm flex items-center gap-3">
+                        <i class="fa-solid fa-circle-notch fa-spin text-lg"></i> 
+                        <span class="italic font-medium">Processando conexão neural...</span>
+                    </div>
+                </div>`;
+            
+            chatWindow.appendChild(div);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+            console.log("[UI] Bolha desenhada com sucesso!");
+        }
+
+        function removerPensando() {
+            console.log("[UI] Removendo bolha de carregamento...");
+            const indicador = document.getElementById('argus-thinking');
+            if (indicador) indicador.remove();
+        }
+
+        // --- GERENCIAMENTO DE CONTEXTO (ALVO) ---
+        let alvoAtual = 'nuvem'; // Padrão: Fala com o Gemini
+        
+        const btnNuvem = document.getElementById('btnNuvem');
+        const btnDebian = document.getElementById('btnDebian');
+
+        btnNuvem.onclick = () => {
+            alvoAtual = 'nuvem';
+            btnNuvem.className = 'text-blue-400 flex items-center gap-2 transition';
+            btnDebian.className = 'text-slate-500 hover:text-green-400 flex items-center gap-2 transition';
+            inputMsg.placeholder = "Faça uma pergunta ao Cérebro IA...";
+        };
+
+        btnDebian.onclick = () => {
+            alvoAtual = 'debian';
+            btnDebian.className = 'text-green-400 flex items-center gap-2 transition';
+            btnNuvem.className = 'text-slate-500 hover:text-blue-400 flex items-center gap-2 transition';
+            inputMsg.placeholder = "Digite um comando para o kernel local (ex: ram, cpu, status)...";
+        };
+
+        btnEnviar.onclick = () => {
+            const msg = inputMsg.value.trim();
+            if(!msg) return;
+            
+            console.log("[AÇÃO] Botão enviar clicado. Mensagem:", msg);
+            appendMessage(msg, 'Leo');
+            socket.emit('mensagem_web', { texto: msg, alvo: alvoAtual });
+            inputMsg.value = '';
+            
+            // Força a exibição imediata
+            mostrarPensando();
+        };
+
+        inputMsg.onkeypress = (e) => { if(e.key === 'Enter') btnEnviar.click(); };
+
+        socket.on('status_argus', (d) => {
+            console.log("[REDE] Status recebido do Node:", d.status);
+            if(d.status === 'pensando') mostrarPensando();
+        });
+
+        socket.on('resposta_argus', (dados) => {
+            console.log("[REDE] Resposta final recebida do Cérebro.");
+            removerPensando();
+            appendMessage(dados.texto, 'Argus');
+        });
+    </script>
+</body>
+</html>
