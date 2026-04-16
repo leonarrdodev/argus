@@ -17,7 +17,6 @@ def carregar_memoria():
         if os.path.exists(MEMORY_FILE):
             with open(MEMORY_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # Garante que as chaves básicas sempre existam (Sanitização)
                 if "fatos" not in data: data["fatos"] = {}
                 if "preferencias" not in data: data["preferencias"] = {}
                 if "contexto_estudo" not in data: data["contexto_estudo"] = ""
@@ -31,14 +30,13 @@ def salvar_memoria(memoria):
         json.dump(memoria, f, indent=4, ensure_ascii=False)
 
 def tentar_gemini(prompt, instrucao):
-    # Mudança crucial: gemini-1.5-flash-latest na v1beta
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
     payload = {
         "contents": [{"parts": [{"text": f"SYSTEM: {instrucao}\nUSER: {prompt}"}]}]
     }
     response = requests.post(url, json=payload, timeout=10)
     if response.status_code != 200:
-        print(f"DEBUG GEMINI ERRO: {response.text}")
+        sys.stderr.write(f"DEBUG GEMINI ERRO: {response.text}\n")
         response.raise_for_status()
     return response.json()['candidates'][0]['content']['parts'][0]['text']
 
@@ -62,8 +60,7 @@ def processar_resposta(texto_completo, memoria):
     for chave, valor in matches:
         if chave == 'nome': memoria['fatos']['nome'] = valor
         elif chave == 'estudo': memoria['contexto_estudo'] = valor
-        else: 
-            # Proteção contra KeyError
+        else:
             if 'preferencias' not in memoria: memoria['preferencias'] = {}
             memoria['preferencias'][chave] = valor
     if matches: salvar_memoria(memoria)
@@ -75,7 +72,7 @@ if __name__ == "__main__":
         dados = json.loads(sys.argv[1])
         prompt = dados.get("text", "")
         memoria = carregar_memoria()
-        
+
         instrucao = (
             f"Você é o ARGUS. Usuário: {memoria['fatos'].get('nome', 'Leo')}. "
             f"Foco: {memoria.get('contexto_estudo', 'Backend')}. "
@@ -86,12 +83,12 @@ if __name__ == "__main__":
         try:
             resposta = tentar_gemini(prompt, instrucao)
         except Exception as e:
-            print(f"DEBUG GEMINI: {e}")
+            sys.stderr.write(f"DEBUG GEMINI: {e}\n")
             try:
                 resposta = tentar_groq(prompt, instrucao)
                 resposta = "*(Redundância Ativada)* " + resposta
             except Exception as e2:
-                print(f"DEBUG GROQ: {e2}")
+                sys.stderr.write(f"DEBUG GROQ: {e2}\n")
                 resposta = "Falha crítica nos motores neurais."
                 status = "error"
 

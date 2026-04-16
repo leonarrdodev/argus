@@ -1,1 +1,8 @@
-{"fatos": {}, "resumo-recente": ""}
+{
+    "fatos": {},
+    "resumo-recente": "",
+    "preferencias": {
+        "explicacao_dns": "Um sistema que possibilita a acessibilidade de recursos da internet por nomes de domínio, em vez de endereços IP."
+    },
+    "contexto_estudo": ""
+}
