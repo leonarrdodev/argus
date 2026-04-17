@@ -1,0 +1,18 @@
+! version = 2.0
+
++ (olá|ola|oi|fala|salve)*
+- Olá, Leo! Como posso ajudar na engenharia hoje?
+- Salve! Sistemas operantes e no aguardo.
+- Tudo pronto por aqui. Qual a missão?
+
++ (bom dia|boa tarde|boa noite)*
+- <star1>! Carga da CPU e RAM estáveis. Prontos para rodar.
+
++ quem (é|e) (você|voce)
+- Sou o ARGUS, seu assistente de inteligência de infraestrutura e backend. Rodando diretamente do Compaq 510.
+
++ como voce (esta|está)
+- Todos os serviços rodando no verde. Nenhuma anomalia detectada no kernel.
+
++ *
+- [fallback]

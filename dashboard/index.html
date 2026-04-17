@@ -25,13 +25,11 @@
         }
     </script>
     <style>
-        /* Scrollbar personalizada */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #1e293b; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
-        /* Estilos customizados para o Markdown do Argus */
         .markdown-bot p { margin-bottom: 0.75rem; }
         .markdown-bot p:last-child { margin-bottom: 0; }
         .markdown-bot strong { font-weight: 700; color: #93c5fd; }
@@ -74,28 +72,35 @@
                     <div>
                         <span class="text-[10px] text-slate-500 font-bold mb-1 block">ARGUS</span>
                         <div class="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30 text-white p-4 shadow-sm text-sm">
-                            <p>Sistemas prontos, Leo. A conexão com o Compaq 510 está estável. O tradutor de Markdown foi inicializado com sucesso.</p>
+                            <p>Sistemas operantes, Leo. Motor RAG, Standby e NLP em linha. O que vamos estudar ou executar hoje?</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="px-6 py-2 border-t border-slate-700 flex items-center gap-6 text-xs font-bold text-slate-500 bg-slate-800/50">
+            <div class="px-6 py-2 border-t border-slate-700 flex items-center gap-6 text-xs font-bold text-slate-500 bg-slate-800/50 overflow-x-auto scrollbar-hide">
                 <span class="tracking-widest opacity-50">CONEXÃO:</span>
-                <button id="btnNuvem" class="text-blue-400 flex items-center gap-2 transition hover:text-blue-300">
+                <button id="btnNuvem" class="text-blue-400 flex items-center gap-2 transition hover:text-blue-300 whitespace-nowrap">
                     <i class="fa-solid fa-cloud"></i> CÉREBRO (IA)
                 </button>
-                <button id="btnDebian" class="text-slate-500 flex items-center gap-2 transition hover:text-green-400">
+                <button id="btnDebian" class="text-slate-500 flex items-center gap-2 transition hover:text-green-400 whitespace-nowrap">
                     <i class="fa-solid fa-server"></i> DEBIAN (LOCAL)
                 </button>
-                <button id="btnSnippet" class="text-slate-500 flex items-center gap-2 transition hover:text-yellow-400">
+                <button id="btnSnippet" class="text-slate-500 flex items-center gap-2 transition hover:text-yellow-400 whitespace-nowrap">
                     <i class="fa-solid fa-code"></i> SALVAR SNIPPET
+                </button>
+                <button id="btnAprender" class="text-slate-500 flex items-center gap-2 transition hover:text-purple-400 whitespace-nowrap">
+                    <i class="fa-solid fa-brain"></i> APRENDER
                 </button>
             </div>
 
             <div class="p-4 bg-panelBg border-t border-slate-700">
+                <input type="file" id="fileUpload" accept=".pdf" style="display: none;">
+                
                 <div class="relative flex items-center bg-slate-800 rounded-lg border border-slate-600 p-1 focus-within:border-blue-500 transition shadow-inner">
-                    <button class="p-3 text-slate-400 hover:text-white transition"><i class="fa-solid fa-paperclip"></i></button>
+                    <button id="btnAnexo" class="p-3 text-slate-400 hover:text-white transition" title="Enviar PDF para estudo">
+                        <i class="fa-solid fa-paperclip"></i>
+                    </button>
                     <input type="text" id="inputMsg" placeholder="Escreva um comando ou pergunte algo ao Cérebro..." class="flex-1 bg-transparent border-none text-white focus:outline-none p-2 text-sm autocomplete-off">
                     <button id="btnEnviar" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-md transition font-bold text-sm mr-1">ENVIAR</button>
                 </div>
@@ -122,28 +127,13 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-3">
-                <div class="bg-panelBg rounded-xl border border-slate-700 p-4 shadow-lg text-center border-b-2 border-b-blue-500">
-                    <i class="fa-solid fa-database text-blue-500 text-lg mb-1"></i>
-                    <p class="text-[10px] text-slate-500 uppercase font-bold">Docs</p>
-                    <p class="text-xl font-black text-white">312</p>
-                </div>
-                <div class="bg-panelBg rounded-xl border border-slate-700 p-4 shadow-lg text-center border-b-2 border-b-indigo-500">
-                    <i class="fa-solid fa-microchip text-indigo-500 text-lg mb-1"></i>
-                    <p class="text-[10px] text-slate-500 uppercase font-bold">Projetos</p>
-                    <p class="text-xl font-black text-white">5</p>
-                </div>
-            </div>
-
         </aside>
     </main>
 
     <script>
-        console.log("[SISTEMA] Iniciando painel neural...");
-
+        // --- GRÁFICO (MANTIDO) ---
         const ctx = document.getElementById('competencyChart').getContext('2d');
         Chart.defaults.color = '#64748b';
-        
         new Chart(ctx, {
             type: 'radar',
             data: {
@@ -161,17 +151,13 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    r: {
-                        grid: { color: 'rgba(148, 163, 184, 0.1)' },
-                        angleLines: { color: 'rgba(148, 163, 184, 0.1)' },
-                        ticks: { display: false },
-                        pointLabels: { font: { size: 10 }, color: '#94a3b8' }
-                    }
+                    r: { ticks: { display: false }, pointLabels: { font: { size: 10 }, color: '#94a3b8' } }
                 },
                 plugins: { legend: { display: false } }
             }
         });
 
+        // --- WEBSOCKET E CHAT ---
         const socket = io();
         const chatWindow = document.getElementById('chatWindow');
         const inputMsg = document.getElementById('inputMsg');
@@ -197,14 +183,12 @@
                     </div>
                 </div>`;
             
-            // Lógica para injetar o botão de copiar com FALLBACK
             if (!isLeo) {
                 const preBlocks = div.querySelectorAll('pre');
                 preBlocks.forEach(pre => {
                     const wrapper = document.createElement('div');
                     wrapper.className = 'relative group mt-2 mb-4';
                     pre.style.marginBottom = '0';
-                    
                     pre.parentNode.insertBefore(wrapper, pre);
                     wrapper.appendChild(pre);
 
@@ -216,43 +200,28 @@
                         const codeElement = pre.querySelector('code');
                         const textToCopy = codeElement ? codeElement.innerText : pre.innerText;
 
-                        const markAsCopied = () => {
-                            const originalHtml = btn.innerHTML;
-                            btn.innerHTML = '<i class="fa-solid fa-check text-green-400"></i> COPIADO!';
-                            btn.classList.add('text-green-400');
-                            setTimeout(() => {
-                                btn.innerHTML = originalHtml;
-                                btn.classList.remove('text-green-400');
-                            }, 2000);
-                        };
-
-                        // Fallback universal para HTTP (sem HTTPS/localhost)
                         const fallbackCopyTextToClipboard = (text) => {
                             const textArea = document.createElement("textarea");
                             textArea.value = text;
-                            textArea.style.position = "fixed";
-                            textArea.style.top = "0";
-                            textArea.style.left = "0";
-                            textArea.style.opacity = "0";
                             document.body.appendChild(textArea);
-                            textArea.focus();
                             textArea.select();
-                            try {
-                                document.execCommand('copy');
-                                markAsCopied();
-                            } catch (err) {
-                                console.error('Falha ao copiar', err);
-                            }
+                            try { document.execCommand('copy'); } catch (err) {}
                             document.body.removeChild(textArea);
                         };
 
                         if (navigator.clipboard && window.isSecureContext) {
-                            navigator.clipboard.writeText(textToCopy)
-                                .then(markAsCopied)
-                                .catch(() => fallbackCopyTextToClipboard(textToCopy));
+                            navigator.clipboard.writeText(textToCopy).catch(() => fallbackCopyTextToClipboard(textToCopy));
                         } else {
                             fallbackCopyTextToClipboard(textToCopy);
                         }
+                        
+                        const originalHtml = btn.innerHTML;
+                        btn.innerHTML = '<i class="fa-solid fa-check text-green-400"></i> COPIADO!';
+                        btn.classList.add('text-green-400');
+                        setTimeout(() => {
+                            btn.innerHTML = originalHtml;
+                            btn.classList.remove('text-green-400');
+                        }, 2000);
                     };
                     wrapper.appendChild(btn);
                 });
@@ -264,61 +233,67 @@
 
         function mostrarPensando() {
             if (document.getElementById('argus-thinking')) return;
-
             const div = document.createElement('div');
             div.id = 'argus-thinking';
             div.className = 'flex gap-4 max-w-3xl mb-6 animate-pulse';
-            
             div.innerHTML = `
-                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">
-                    <i class="fa-solid fa-robot"></i>
-                </div>
+                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs"><i class="fa-solid fa-robot"></i></div>
                 <div>
                     <span class="text-[10px] text-slate-500 font-bold mb-1 block">ARGUS</span>
                     <div class="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30 text-blue-300 p-4 shadow-sm text-sm flex items-center gap-3">
-                        <i class="fa-solid fa-circle-notch fa-spin text-lg"></i> 
-                        <span class="italic font-medium">Processando...</span>
+                        <i class="fa-solid fa-circle-notch fa-spin text-lg"></i> <span class="italic font-medium">Processando...</span>
                     </div>
                 </div>`;
-            
             chatWindow.appendChild(div);
             chatWindow.scrollTop = chatWindow.scrollHeight;
         }
 
         function removerPensando() {
-            const indicador = document.getElementById('argus-thinking');
-            if (indicador) indicador.remove();
+            const ind = document.getElementById('argus-thinking');
+            if (ind) ind.remove();
         }
 
-        // --- GERENCIAMENTO DE CONTEXTO (ALVO) ---
+        // --- SISTEMA DE ALVOS ---
         let alvoAtual = 'nuvem';
         
         const btnNuvem = document.getElementById('btnNuvem');
         const btnDebian = document.getElementById('btnDebian');
         const btnSnippet = document.getElementById('btnSnippet');
+        const btnAprender = document.getElementById('btnAprender'); // NOVO BOTÃO
+
+        function resetarBotoes() {
+            btnNuvem.className = 'text-slate-500 flex items-center gap-2 transition hover:text-blue-300 whitespace-nowrap';
+            btnDebian.className = 'text-slate-500 flex items-center gap-2 transition hover:text-green-400 whitespace-nowrap';
+            btnSnippet.className = 'text-slate-500 flex items-center gap-2 transition hover:text-yellow-400 whitespace-nowrap';
+            btnAprender.className = 'text-slate-500 flex items-center gap-2 transition hover:text-purple-400 whitespace-nowrap';
+        }
 
         btnNuvem.onclick = () => {
             alvoAtual = 'nuvem';
-            btnNuvem.className = 'text-blue-400 flex items-center gap-2 transition hover:text-blue-300';
-            btnDebian.className = 'text-slate-500 flex items-center gap-2 transition hover:text-green-400';
-            btnSnippet.className = 'text-slate-500 flex items-center gap-2 transition hover:text-yellow-400';
-            inputMsg.placeholder = "Faça uma pergunta ao Cérebro IA...";
+            resetarBotoes();
+            btnNuvem.className = 'text-blue-400 flex items-center gap-2 transition hover:text-blue-300 whitespace-nowrap';
+            inputMsg.placeholder = "Faça uma pergunta ao Cérebro IA (Nuvem ou RAG)...";
         };
 
         btnDebian.onclick = () => {
             alvoAtual = 'debian';
-            btnDebian.className = 'text-green-400 flex items-center gap-2 transition';
-            btnNuvem.className = 'text-slate-500 flex items-center gap-2 transition hover:text-blue-300';
-            btnSnippet.className = 'text-slate-500 flex items-center gap-2 transition hover:text-yellow-400';
-            inputMsg.placeholder = "Digite um comando para o kernel local (ex: ram, cpu, status)...";
+            resetarBotoes();
+            btnDebian.className = 'text-green-400 flex items-center gap-2 transition whitespace-nowrap';
+            inputMsg.placeholder = "Digite um comando para o kernel (ex: ram, cpu, status)...";
         };
 
         btnSnippet.onclick = () => {
             alvoAtual = 'snippet';
-            btnSnippet.className = 'text-yellow-400 flex items-center gap-2 transition';
-            btnNuvem.className = 'text-slate-500 flex items-center gap-2 transition hover:text-blue-300';
-            btnDebian.className = 'text-slate-500 flex items-center gap-2 transition hover:text-green-400';
-            inputMsg.placeholder = "Ex: conectar servidor ssh : ssh leonardo@192.168.1.200";
+            resetarBotoes();
+            btnSnippet.className = 'text-yellow-400 flex items-center gap-2 transition whitespace-nowrap';
+            inputMsg.placeholder = "Formato Snippet -> Descrição : Comando/Código";
+        };
+
+        btnAprender.onclick = () => {
+            alvoAtual = 'aprender';
+            resetarBotoes();
+            btnAprender.className = 'text-purple-400 flex items-center gap-2 transition whitespace-nowrap';
+            inputMsg.placeholder = "Formato Rápido -> Tópico : Explicação";
         };
 
         btnEnviar.onclick = () => {
@@ -329,8 +304,9 @@
             socket.emit('mensagem_web', { texto: msg, alvo: alvoAtual });
             inputMsg.value = '';
             
-            if (alvoAtual === 'snippet') {
-                btnNuvem.click(); // Volta automaticamente para a nuvem
+            // Voltar para a nuvem automaticamente se não for chat comum
+            if (alvoAtual === 'snippet' || alvoAtual === 'aprender') {
+                btnNuvem.click();
             } else {
                 mostrarPensando();
             }
@@ -338,14 +314,45 @@
 
         inputMsg.onkeypress = (e) => { if(e.key === 'Enter') btnEnviar.click(); };
 
-        socket.on('status_argus', (d) => {
-            if(d.status === 'pensando') mostrarPensando();
-        });
-
+        socket.on('status_argus', (d) => { if(d.status === 'pensando') mostrarPensando(); });
         socket.on('resposta_argus', (dados) => {
             removerPensando();
             appendMessage(dados.texto, 'Argus');
         });
+
+        // --- SISTEMA DE UPLOAD DE PDFs ---
+        const btnAnexo = document.getElementById('btnAnexo');
+        const fileUpload = document.getElementById('fileUpload');
+
+        btnAnexo.onclick = () => fileUpload.click();
+
+        fileUpload.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            appendMessage(`A preparar documento: **${file.name}**...`, 'Leo');
+            mostrarPensando();
+
+            const formData = new FormData();
+            formData.append('documento', file);
+
+            try {
+                const response = await fetch('/upload', { method: 'POST', body: formData });
+                const result = await response.json();
+                
+                removerPensando();
+                if (response.ok) {
+                    appendMessage(`📄 **Documento na Fila:** \`${file.name}\`\n\n*${result.mensagem}*`, 'Argus');
+                } else {
+                    appendMessage(`❌ **Erro no Upload:** ${result.erro}`, 'Argus');
+                }
+            } catch (err) {
+                removerPensando();
+                appendMessage(`❌ **Falha ao comunicar com o servidor para upload.**`, 'Argus');
+                console.error(err);
+            }
+            fileUpload.value = ''; 
+        };
     </script>
 </body>
 </html>

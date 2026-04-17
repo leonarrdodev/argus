@@ -25,7 +25,7 @@ const argus = new Client({
 
 argus.once('ready', () => {
     console.log(`[ARGUS] Online, com Memória SQLite ativa e pronto para aprender.`);
-    startServer(3000); // Inicia a interface na porta 3000
+    startServer(5000); // Inicia a interface na porta 3000
 });
 
 argus.on('messageCreate', async (message) => {
