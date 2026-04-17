@@ -3,8 +3,6 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 
-// ─── Setup ────────────────────────────────────────────────────────────────────
-
 const homeDir = os.homedir();
 const dataDir = path.join(homeDir, 'argus/data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
@@ -13,10 +11,7 @@ const db = new Database(path.join(dataDir, 'argus.sqlite'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
-// ─── Schema ───────────────────────────────────────────────────────────────────
-
 db.exec(`
-  -- Projetos que o ARGUS conhece.
   CREATE TABLE IF NOT EXISTS projetos (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     nome        TEXT    NOT NULL UNIQUE,
@@ -28,7 +23,6 @@ db.exec(`
     analisado_em DATETIME
   );
 
-  -- Habilidades mapeadas do Leo.
   CREATE TABLE IF NOT EXISTS habilidades (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     area        TEXT    NOT NULL UNIQUE,
@@ -39,7 +33,6 @@ db.exec(`
     atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- Gaps: pontos cegos ou fracos identificados.
   CREATE TABLE IF NOT EXISTS gaps (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     conceito    TEXT    NOT NULL,
@@ -51,7 +44,6 @@ db.exec(`
     atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- Preferências do Leo
   CREATE TABLE IF NOT EXISTS preferencias (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     categoria   TEXT    NOT NULL,
@@ -62,7 +54,6 @@ db.exec(`
     UNIQUE(categoria, chave)
   );
 
-  -- Observações geradas pelo standby.
   CREATE TABLE IF NOT EXISTS observacoes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     projeto_id  INTEGER REFERENCES projetos(id) ON DELETE SET NULL,
@@ -74,7 +65,6 @@ db.exec(`
     criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- Sessões de interrogatório (avaliação de perfil).
   CREATE TABLE IF NOT EXISTS sessoes_avaliacao (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     contexto      TEXT,
@@ -85,7 +75,6 @@ db.exec(`
     criado_em     DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- Histórico de conversa por sessão.
   CREATE TABLE IF NOT EXISTS historico_chat (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     sessao_id   TEXT    NOT NULL,
@@ -94,7 +83,6 @@ db.exec(`
     criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- Fatos gerais (mantido para compatibilidade).
   CREATE TABLE IF NOT EXISTS fatos (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     chave       TEXT    NOT NULL UNIQUE,
@@ -103,7 +91,6 @@ db.exec(`
     criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- Snippets Salvos Rapidamente
   CREATE TABLE IF NOT EXISTS snippets (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     descricao   TEXT    NOT NULL,
@@ -113,7 +100,6 @@ db.exec(`
     criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- [NOVO] Cache de Conhecimento (Camada 3)
   CREATE TABLE IF NOT EXISTS cache_respostas (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     pergunta_limpa  TEXT    NOT NULL UNIQUE,
@@ -123,16 +109,14 @@ db.exec(`
     ultimo_uso      DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- [NOVO] Tabela Temporária de Fila de Leitura
   CREATE TABLE IF NOT EXISTS fila_leitura (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     fonte       TEXT    NOT NULL,
     conteudo    TEXT    NOT NULL,
-    status      TEXT    NOT NULL DEFAULT 'pendente', -- 'pendente', 'processando', 'concluido', 'erro'
+    status      TEXT    NOT NULL DEFAULT 'pendente',
     criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  -- [NOVO] Base de Conhecimento RAG usando FTS5 para busca hiper-rápida
   CREATE VIRTUAL TABLE IF NOT EXISTS base_conhecimento USING fts5(
     fonte,
     topico,
@@ -141,8 +125,6 @@ db.exec(`
     tokenize='porter'
   );
 `);
-
-// ─── Repositórios Antigos ────────────────────────────────────────────────────
 
 export const projetos = {
   save: (nome: string, caminho: string, descricao?: string, stack?: string[]) => {
@@ -248,7 +230,7 @@ export const historico = {
     db.prepare(`INSERT INTO historico_chat (sessao_id, papel, conteudo) VALUES (?, ?, ?)`).run(sessaoId, papel, conteudo);
   },
   getSessao: (sessaoId: string, limite = 20) => {
-    return db.prepare(`SELECT papel, conteudo FROM historico_chat WHERE sessao_id = ? ORDER BY criado_em ASC LIMIT ?`).all(sessaoId, limite);
+    return db.prepare(`SELECT papel, conteudo FROM historico_chat WHERE sessao_id = ? ORDER BY criado_em ASC LIMIT ?`).all(sessaoId, limite) as { papel: string; conteudo: string }[];
   },
   limpar: (sessaoId: string) => db.prepare(`DELETE FROM historico_chat WHERE sessao_id = ?`).run(sessaoId),
 };
@@ -267,55 +249,51 @@ export const snippets = {
   },
   buscarTodos: () => db.prepare(`SELECT * FROM snippets ORDER BY criado_em DESC`).all(),
   buscarPorPalavraChave: (palavra: string) => {
-      return db.prepare(`SELECT * FROM snippets WHERE descricao LIKE ? ORDER BY criado_em DESC LIMIT 3`).all(`%${palavra}%`) as any[];
-  }
+    return db.prepare(`SELECT * FROM snippets WHERE descricao LIKE ? ORDER BY criado_em DESC LIMIT 3`).all(`%${palavra}%`) as any[];
+  },
 };
-
-// ─── Novos Repositórios (RAG, NLP e Cache) ───────────────────────────────────
 
 export const cacheRespostas = {
   salvar: (pergunta: string, resposta: string) => {
-      const sql = `
-          INSERT INTO cache_respostas (pergunta_limpa, resposta) 
-          VALUES (?, ?) 
-          ON CONFLICT(pergunta_limpa) DO UPDATE SET 
-          acessos = acessos + 1, 
-          ultimo_uso = CURRENT_TIMESTAMP
-      `;
-      db.prepare(sql).run(pergunta, resposta);
+    db.prepare(`
+      INSERT INTO cache_respostas (pergunta_limpa, resposta)
+      VALUES (?, ?)
+      ON CONFLICT(pergunta_limpa) DO UPDATE SET
+        acessos    = acessos + 1,
+        ultimo_uso = CURRENT_TIMESTAMP
+    `).run(pergunta, resposta);
   },
   buscar: (pergunta: string) => {
-      const row = db.prepare(`SELECT resposta FROM cache_respostas WHERE pergunta_limpa = ?`).get(pergunta) as any;
-      if (row) {
-          db.prepare(`UPDATE cache_respostas SET acessos = acessos + 1, ultimo_uso = CURRENT_TIMESTAMP WHERE pergunta_limpa = ?`).run(pergunta);
-          return row.resposta;
-      }
-      return null;
-  }
+    const row = db.prepare(`SELECT resposta FROM cache_respostas WHERE pergunta_limpa = ?`).get(pergunta) as any;
+    if (row) {
+      db.prepare(`UPDATE cache_respostas SET acessos = acessos + 1, ultimo_uso = CURRENT_TIMESTAMP WHERE pergunta_limpa = ?`).run(pergunta);
+      return row.resposta as string;
+    }
+    return null;
+  },
 };
 
 export const filaLeitura = {
   adicionar: (fonte: string, conteudo: string) => {
-      db.prepare(`INSERT INTO fila_leitura (fonte, conteudo) VALUES (?, ?)`).run(fonte, conteudo);
+    db.prepare(`INSERT INTO fila_leitura (fonte, conteudo) VALUES (?, ?)`).run(fonte, conteudo);
   },
   obterPendente: () => {
-      return db.prepare(`SELECT * FROM fila_leitura WHERE status = 'pendente' ORDER BY id ASC LIMIT 1`).get() as any;
+    return db.prepare(`SELECT * FROM fila_leitura WHERE status = 'pendente' ORDER BY id ASC LIMIT 1`).get() as any;
   },
   marcarStatus: (id: number, status: string) => {
-      db.prepare(`UPDATE fila_leitura SET status = ? WHERE id = ?`).run(status, id);
-  }
+    db.prepare(`UPDATE fila_leitura SET status = ? WHERE id = ?`).run(status, id);
+  },
 };
 
 export const ragDatabase = {
   salvarFragmentoExtraido: (fonte: string, topico: string, resumo: string, tags: string) => {
-      db.prepare(`INSERT INTO base_conhecimento (fonte, topico, resumo, tags) VALUES (?, ?, ?, ?)`).run(fonte, topico, resumo, tags);
+    db.prepare(`INSERT INTO base_conhecimento (fonte, topico, resumo, tags) VALUES (?, ?, ?, ?)`).run(fonte, topico, resumo, tags);
   },
   buscarFTS: (termo: string) => {
-      if (!termo || termo.length < 3) return [];
-      const termoLimpo = termo.replace(/[^\w\s]/gi, '').trim().split(' ').join(' OR ');
-      const sql = `SELECT * FROM base_conhecimento WHERE base_conhecimento MATCH ? ORDER BY rank LIMIT 3`;
-      return db.prepare(sql).all(termoLimpo) as any[];
-  }
+    if (!termo || termo.length < 3) return [];
+    const termoLimpo = termo.replace(/[^\w\s]/gi, '').trim().split(' ').join(' OR ');
+    return db.prepare(`SELECT * FROM base_conhecimento WHERE base_conhecimento MATCH ? ORDER BY rank LIMIT 3`).all(termoLimpo) as any[];
+  },
 };
 
 export default db;

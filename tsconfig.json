@@ -1,21 +1,19 @@
 {
-    "compilerOptions": {
+  "compilerOptions": {
     "rootDir": "./core",
     "outDir": "./dist",
     "module": "nodenext",
     "target": "ES2020",
-    "types": [],
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "strict": true,
-    "jsx": "react-jsx",
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
-    "skipLibCheck": true,
+    "skipLibCheck": true
   }
 }
