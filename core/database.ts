@@ -111,6 +111,15 @@ db.exec(`
     criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS snippets (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    descricao   TEXT    NOT NULL,
+    codigo      TEXT    NOT NULL,
+    linguagem   TEXT    DEFAULT 'bash',
+    tags        TEXT    DEFAULT '[]',
+    criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
 `);
 
 // ─── Repositórios ─────────────────────────────────────────────────────────────
@@ -264,6 +273,18 @@ export const repository = {
   listFatos: () => db.prepare(`SELECT chave, valor FROM fatos`).all() as { chave: string; valor: string }[],
 };
 
+export const snippets = {
+  salvar: (descricao: string, codigo: string, linguagem = 'bash') => {
+    db.prepare(`INSERT INTO snippets (descricao, codigo, linguagem) VALUES (?, ?, ?)`).run(descricao, codigo, linguagem);
+  },
+  buscarTodos: () => db.prepare(`SELECT * FROM snippets ORDER BY criado_em DESC`).all(),
+  
+  // NOVA FUNÇÃO: Busca simples por palavras na descrição
+  buscarPorPalavraChave: (palavra: string) => {
+      // Usamos LIKE para uma busca flexível
+      return db.prepare(`SELECT * FROM snippets WHERE descricao LIKE ? ORDER BY criado_em DESC LIMIT 3`).all(`%${palavra}%`) as {descricao: string, codigo: string, linguagem: string}[];
+  }
+};
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 type ObservacaoTipo = 'analise_codigo' | 'padrao' | 'anomalia' | 'progresso';

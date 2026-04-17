@@ -3,6 +3,7 @@ import json
 import os
 import requests
 import re
+import sqlite3
 from dotenv import load_dotenv
 
 # Carrega as chaves do .env
@@ -11,6 +12,35 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
 MEMORY_FILE = os.path.join(os.path.dirname(__file__), '../memory.json')
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
+DB_PATH = os.path.join(os.path.dirname(__file__), '../data/argus.sqlite')
+
+def buscar_snippets_relevantes():
+    """Busca os snippets no banco SQLite para injetar no contexto da IA."""
+    try:
+        if not os.path.exists(DB_PATH):
+            return ""
+            
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Traz os últimos 15 snippets salvos para o contexto (pode aumentar se quiser)
+        cursor.execute("SELECT descricao, codigo, linguagem FROM snippets ORDER BY criado_em DESC LIMIT 15")
+        resultados = cursor.fetchall()
+        conn.close()
+        
+        if not resultados:
+            return ""
+            
+        contexto = "\n\n[MEMÓRIA DE SNIPPETS E COMANDOS DO LEO]\n"
+        for desc, cod, lang in resultados:
+            contexto += f"- Objetivo: {desc} | Comando ({lang}): {cod}\n"
+        
+        contexto += "\nInstrução Especial: Se o usuário pedir um comando ou código que esteja nesta lista acima, forneça EXATAMENTE o código salvo."
+        return contexto
+        
+    except Exception as e:
+        sys.stderr.write(f"DEBUG SQLITE ERRO: {e}\n")
+        return ""
 
 def carregar_memoria():
     try:
@@ -72,11 +102,16 @@ if __name__ == "__main__":
         dados = json.loads(sys.argv[1])
         prompt = dados.get("text", "")
         memoria = carregar_memoria()
+        
+        # 1. Busca os snippets salvos diretamente do banco de dados
+        contexto_snippets = buscar_snippets_relevantes()
 
+        # 2. Monta a instrução do sistema com o contexto injetado
         instrucao = (
             f"Você é o ARGUS. Usuário: {memoria['fatos'].get('nome', 'Leo')}. "
             f"Foco: {memoria.get('contexto_estudo', 'Backend')}. "
             "Se aprender algo, use SET_MEM[chave=valor]."
+            f"{contexto_snippets}"
         )
 
         status = "success"

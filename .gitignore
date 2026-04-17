@@ -17,3 +17,4 @@ data/
 # Logs do PM2 e Erros
 *.log
 
+ideias.md

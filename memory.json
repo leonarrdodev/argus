@@ -2,7 +2,13 @@
     "fatos": {},
     "resumo-recente": "",
     "preferencias": {
-        "explicacao_dns": "Um sistema que possibilita a acessibilidade de recursos da internet por nomes de domínio, em vez de endereços IP."
+        "explicacao_dns": "Um sistema que possibilita a acessibilidade de recursos da internet por nomes de domínio, em vez de endereços IP.",
+        "command_update_pm2": "'pm2 update {nome_processo}'",
+        "command_restart_pm2": "'pm2 restart {nome_processo}'",
+        "command_reload_pm2": "'pm2 reload {nome_processo}'",
+        "cmd_pm2": "pm2 restart nome",
+        "opcoes_pm2": "start, restart, stop, logs, list",
+        "chave": "valor"
     },
     "contexto_estudo": ""
 }

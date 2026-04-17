@@ -34,7 +34,7 @@
         /* Estilos customizados para o Markdown do Argus */
         .markdown-bot p { margin-bottom: 0.75rem; }
         .markdown-bot p:last-child { margin-bottom: 0; }
-        .markdown-bot strong { font-weight: 700; color: #93c5fd; } /* Negrito em azul claro */
+        .markdown-bot strong { font-weight: 700; color: #93c5fd; }
         .markdown-bot ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 0.75rem; }
         .markdown-bot ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 0.75rem; }
         .markdown-bot code { background-color: rgba(0,0,0,0.4); padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-family: monospace; color: #e2e8f0; }
@@ -87,6 +87,9 @@
                 </button>
                 <button id="btnDebian" class="text-slate-500 flex items-center gap-2 transition hover:text-green-400">
                     <i class="fa-solid fa-server"></i> DEBIAN (LOCAL)
+                </button>
+                <button id="btnSnippet" class="text-slate-500 flex items-center gap-2 transition hover:text-yellow-400">
+                    <i class="fa-solid fa-code"></i> SALVAR SNIPPET
                 </button>
             </div>
 
@@ -189,21 +192,78 @@
                 </div>
                 <div>
                     <span class="text-[10px] text-slate-500 font-bold mb-1 block ${isLeo ? 'text-right' : ''}">${user.toUpperCase()}</span>
-                    <div class="${isLeo ? 'bg-userBubble rounded-l-xl rounded-br-xl' : 'bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30'} text-white p-4 shadow-sm text-sm">
+                    <div class="${isLeo ? 'bg-userBubble rounded-l-xl rounded-br-xl' : 'bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30'} text-white p-4 shadow-sm text-sm relative">
                         ${conteudo}
                     </div>
                 </div>`;
             
+            // Lógica para injetar o botão de copiar com FALLBACK
+            if (!isLeo) {
+                const preBlocks = div.querySelectorAll('pre');
+                preBlocks.forEach(pre => {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'relative group mt-2 mb-4';
+                    pre.style.marginBottom = '0';
+                    
+                    pre.parentNode.insertBefore(wrapper, pre);
+                    wrapper.appendChild(pre);
+
+                    const btn = document.createElement('button');
+                    btn.className = 'absolute top-2 right-2 bg-slate-700 hover:bg-slate-600 text-slate-300 px-2 py-1 rounded text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity z-10 border border-slate-500/50 shadow-md';
+                    btn.innerHTML = '<i class="fa-regular fa-copy"></i> COPIAR';
+                    
+                    btn.onclick = function() {
+                        const codeElement = pre.querySelector('code');
+                        const textToCopy = codeElement ? codeElement.innerText : pre.innerText;
+
+                        const markAsCopied = () => {
+                            const originalHtml = btn.innerHTML;
+                            btn.innerHTML = '<i class="fa-solid fa-check text-green-400"></i> COPIADO!';
+                            btn.classList.add('text-green-400');
+                            setTimeout(() => {
+                                btn.innerHTML = originalHtml;
+                                btn.classList.remove('text-green-400');
+                            }, 2000);
+                        };
+
+                        // Fallback universal para HTTP (sem HTTPS/localhost)
+                        const fallbackCopyTextToClipboard = (text) => {
+                            const textArea = document.createElement("textarea");
+                            textArea.value = text;
+                            textArea.style.position = "fixed";
+                            textArea.style.top = "0";
+                            textArea.style.left = "0";
+                            textArea.style.opacity = "0";
+                            document.body.appendChild(textArea);
+                            textArea.focus();
+                            textArea.select();
+                            try {
+                                document.execCommand('copy');
+                                markAsCopied();
+                            } catch (err) {
+                                console.error('Falha ao copiar', err);
+                            }
+                            document.body.removeChild(textArea);
+                        };
+
+                        if (navigator.clipboard && window.isSecureContext) {
+                            navigator.clipboard.writeText(textToCopy)
+                                .then(markAsCopied)
+                                .catch(() => fallbackCopyTextToClipboard(textToCopy));
+                        } else {
+                            fallbackCopyTextToClipboard(textToCopy);
+                        }
+                    };
+                    wrapper.appendChild(btn);
+                });
+            }
+
             chatWindow.appendChild(div);
             chatWindow.scrollTop = chatWindow.scrollHeight;
         }
 
         function mostrarPensando() {
-            console.log("[UI] Tentando desenhar a bolha de carregamento...");
-            if (document.getElementById('argus-thinking')) {
-                console.log("[UI] A bolha já existe na tela, ignorando.");
-                return;
-            }
+            if (document.getElementById('argus-thinking')) return;
 
             const div = document.createElement('div');
             div.id = 'argus-thinking';
@@ -217,63 +277,72 @@
                     <span class="text-[10px] text-slate-500 font-bold mb-1 block">ARGUS</span>
                     <div class="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30 text-blue-300 p-4 shadow-sm text-sm flex items-center gap-3">
                         <i class="fa-solid fa-circle-notch fa-spin text-lg"></i> 
-                        <span class="italic font-medium">Processando conexão neural...</span>
+                        <span class="italic font-medium">Processando...</span>
                     </div>
                 </div>`;
             
             chatWindow.appendChild(div);
             chatWindow.scrollTop = chatWindow.scrollHeight;
-            console.log("[UI] Bolha desenhada com sucesso!");
         }
 
         function removerPensando() {
-            console.log("[UI] Removendo bolha de carregamento...");
             const indicador = document.getElementById('argus-thinking');
             if (indicador) indicador.remove();
         }
 
         // --- GERENCIAMENTO DE CONTEXTO (ALVO) ---
-        let alvoAtual = 'nuvem'; // Padrão: Fala com o Gemini
+        let alvoAtual = 'nuvem';
         
         const btnNuvem = document.getElementById('btnNuvem');
         const btnDebian = document.getElementById('btnDebian');
+        const btnSnippet = document.getElementById('btnSnippet');
 
         btnNuvem.onclick = () => {
             alvoAtual = 'nuvem';
-            btnNuvem.className = 'text-blue-400 flex items-center gap-2 transition';
-            btnDebian.className = 'text-slate-500 hover:text-green-400 flex items-center gap-2 transition';
+            btnNuvem.className = 'text-blue-400 flex items-center gap-2 transition hover:text-blue-300';
+            btnDebian.className = 'text-slate-500 flex items-center gap-2 transition hover:text-green-400';
+            btnSnippet.className = 'text-slate-500 flex items-center gap-2 transition hover:text-yellow-400';
             inputMsg.placeholder = "Faça uma pergunta ao Cérebro IA...";
         };
 
         btnDebian.onclick = () => {
             alvoAtual = 'debian';
             btnDebian.className = 'text-green-400 flex items-center gap-2 transition';
-            btnNuvem.className = 'text-slate-500 hover:text-blue-400 flex items-center gap-2 transition';
+            btnNuvem.className = 'text-slate-500 flex items-center gap-2 transition hover:text-blue-300';
+            btnSnippet.className = 'text-slate-500 flex items-center gap-2 transition hover:text-yellow-400';
             inputMsg.placeholder = "Digite um comando para o kernel local (ex: ram, cpu, status)...";
+        };
+
+        btnSnippet.onclick = () => {
+            alvoAtual = 'snippet';
+            btnSnippet.className = 'text-yellow-400 flex items-center gap-2 transition';
+            btnNuvem.className = 'text-slate-500 flex items-center gap-2 transition hover:text-blue-300';
+            btnDebian.className = 'text-slate-500 flex items-center gap-2 transition hover:text-green-400';
+            inputMsg.placeholder = "Ex: conectar servidor ssh : ssh leonardo@192.168.1.200";
         };
 
         btnEnviar.onclick = () => {
             const msg = inputMsg.value.trim();
             if(!msg) return;
             
-            console.log("[AÇÃO] Botão enviar clicado. Mensagem:", msg);
             appendMessage(msg, 'Leo');
             socket.emit('mensagem_web', { texto: msg, alvo: alvoAtual });
             inputMsg.value = '';
             
-            // Força a exibição imediata
-            mostrarPensando();
+            if (alvoAtual === 'snippet') {
+                btnNuvem.click(); // Volta automaticamente para a nuvem
+            } else {
+                mostrarPensando();
+            }
         };
 
         inputMsg.onkeypress = (e) => { if(e.key === 'Enter') btnEnviar.click(); };
 
         socket.on('status_argus', (d) => {
-            console.log("[REDE] Status recebido do Node:", d.status);
             if(d.status === 'pensando') mostrarPensando();
         });
 
         socket.on('resposta_argus', (dados) => {
-            console.log("[REDE] Resposta final recebida do Cérebro.");
             removerPensando();
             appendMessage(dados.texto, 'Argus');
         });
