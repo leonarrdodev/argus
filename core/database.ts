@@ -11,6 +11,7 @@ const db = new Database(path.join(dataDir, 'argus.sqlite'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+// Esquema do Banco de Dados
 db.exec(`
   CREATE TABLE IF NOT EXISTS projetos (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,16 +66,6 @@ db.exec(`
     criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  CREATE TABLE IF NOT EXISTS sessoes_avaliacao (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    contexto      TEXT,
-    perguntas     TEXT    NOT NULL DEFAULT '[]',
-    gaps_abertos  TEXT    NOT NULL DEFAULT '[]',
-    gaps_fechados TEXT    NOT NULL DEFAULT '[]',
-    resumo        TEXT,
-    criado_em     DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
   CREATE TABLE IF NOT EXISTS historico_chat (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     sessao_id   TEXT    NOT NULL,
@@ -117,7 +108,19 @@ db.exec(`
     criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  CREATE VIRTUAL TABLE IF NOT EXISTS base_conhecimento USING fts5(
+  CREATE TABLE IF NOT EXISTS fila_leitura (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    fonte       TEXT    NOT NULL,
+    conteudo    TEXT    NOT NULL,
+    status      TEXT    NOT NULL DEFAULT 'pendente',
+    criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+db.exec(`DROP TABLE IF EXISTS base_conhecimento;`);
+
+db.exec(`
+  CREATE VIRTUAL TABLE base_conhecimento USING fts5(
     fonte,
     topico,
     resumo,
@@ -126,103 +129,20 @@ db.exec(`
   );
 `);
 
-export const projetos = {
-  save: (nome: string, caminho: string, descricao?: string, stack?: string[]) => {
-    return db.prepare(`
-      INSERT INTO projetos (nome, caminho, descricao, stack)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(nome) DO UPDATE SET
-        caminho   = excluded.caminho,
-        descricao = excluded.descricao,
-        stack     = excluded.stack
-    `).run(nome, caminho, descricao ?? null, stack ? JSON.stringify(stack) : null);
+// Exportação dos módulos de acesso
+export const snippets = {
+  salvar: (descricao: string, codigo: string, linguagem = 'bash') => {
+    db.prepare(`INSERT INTO snippets (descricao, codigo, linguagem) VALUES (?, ?, ?)`).run(descricao, codigo, linguagem);
   },
-  marcarAnalisado: (id: number) => {
-    db.prepare(`UPDATE projetos SET analisado_em = CURRENT_TIMESTAMP WHERE id = ?`).run(id);
-  },
-  listAtivos: () => {
-    return db.prepare(`SELECT * FROM projetos WHERE ativo = 1 ORDER BY analisado_em ASC NULLS FIRST`).all();
-  },
-  getByNome: (nome: string) => {
-    return db.prepare(`SELECT * FROM projetos WHERE nome = ?`).get(nome);
+  buscarPorPalavraChave: (palavra: string) => {
+    return db.prepare(`SELECT * FROM snippets WHERE descricao LIKE ? ORDER BY criado_em DESC LIMIT 3`).all(`%${palavra}%`) as any[];
   },
 };
 
-export const habilidades = {
-  upsert: (area: string, nivel: number, origem: 'inferido' | 'confirmado' | 'declarado', evidencia?: string, confiancaDelta = 0) => {
-    const existente = db.prepare(`SELECT * FROM habilidades WHERE area = ?`).get(area) as any;
-    if (existente) {
-      const novaConfianca = Math.min(100, Math.max(0, existente.confianca + confiancaDelta));
-      db.prepare(`
-        UPDATE habilidades
-        SET nivel = ?, confianca = ?, origem = ?, evidencia = ?, atualizado_em = CURRENT_TIMESTAMP
-        WHERE area = ?
-      `).run(nivel, novaConfianca, origem, evidencia ?? existente.evidencia, area);
-    } else {
-      const confiancaInicial = origem === 'confirmado' ? 80 : origem === 'declarado' ? 70 : 30;
-      db.prepare(`
-        INSERT INTO habilidades (area, nivel, confianca, origem, evidencia)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(area, nivel, confiancaInicial, origem, evidencia ?? null);
-    }
+export const repository = {
+  saveFato: (chave: string, valor: string) => {
+    db.prepare(`INSERT INTO fatos (chave, valor) VALUES (?, ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor`).run(chave, valor);
   },
-  getAll: () => db.prepare(`SELECT * FROM habilidades ORDER BY area`).all(),
-  getByArea: (area: string) => db.prepare(`SELECT * FROM habilidades WHERE area = ?`).get(area),
-};
-
-export const gaps = {
-  abrir: (conceito: string, evidencia: string, area?: string, origem?: string) => {
-    const existente = db.prepare(`SELECT id FROM gaps WHERE conceito = ? AND status != 'resolvido'`).get(conceito);
-    if (existente) return existente;
-    return db.prepare(`INSERT INTO gaps (conceito, evidencia, area, origem) VALUES (?, ?, ?, ?)`)
-      .run(conceito, evidencia, area ?? null, origem ?? null);
-  },
-  confirmar: (id: number) => db.prepare(`UPDATE gaps SET status = 'confirmado', atualizado_em = CURRENT_TIMESTAMP WHERE id = ?`).run(id),
-  resolver: (id: number) => db.prepare(`UPDATE gaps SET status = 'resolvido', atualizado_em = CURRENT_TIMESTAMP WHERE id = ?`).run(id),
-  listAtivos: () => db.prepare(`SELECT * FROM gaps WHERE status != 'resolvido' ORDER BY criado_em DESC`).all(),
-  listPorArea: (area: string) => db.prepare(`SELECT * FROM gaps WHERE area = ? AND status != 'resolvido'`).all(area),
-};
-
-export const preferencias = {
-  set: (categoria: string, chave: string, valor: string, origem: 'declarado' | 'inferido' = 'inferido') => {
-    db.prepare(`
-      INSERT INTO preferencias (categoria, chave, valor, origem)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(categoria, chave) DO UPDATE SET valor = excluded.valor, origem = excluded.origem
-    `).run(categoria, chave, valor, origem);
-  },
-  getAll: () => db.prepare(`SELECT * FROM preferencias ORDER BY categoria, chave`).all(),
-  getByCategoria: (cat: string) => db.prepare(`SELECT * FROM preferencias WHERE categoria = ?`).all(cat),
-};
-
-export const observacoes = {
-  registrar: (tipo: string, conteudo: string, tags: string[], projetoId?: number, relevancia = 50) => {
-    db.prepare(`INSERT INTO observacoes (projeto_id, tipo, conteudo, tags, relevancia) VALUES (?, ?, ?, ?, ?)`)
-      .run(projetoId ?? null, tipo, conteudo, JSON.stringify(tags), relevancia);
-  },
-  getByTags: (tags: string[], limite = 10) => {
-    const cond = tags.map(() => `tags LIKE ?`).join(' OR ');
-    const params = tags.map(t => `%"${t}"%`);
-    return db.prepare(`SELECT * FROM observacoes WHERE (${cond}) ORDER BY relevancia DESC, criado_em DESC LIMIT ?`).all(...params, limite);
-  },
-  getRecentes: (limite = 20) => db.prepare(`SELECT * FROM observacoes ORDER BY criado_em DESC LIMIT ?`).all(limite),
-  marcarLida: (id: number) => db.prepare(`UPDATE observacoes SET lida = 1 WHERE id = ?`).run(id),
-};
-
-export const sessoesAvaliacao = {
-  criar: (contexto: string) => db.prepare(`INSERT INTO sessoes_avaliacao (contexto) VALUES (?)`).run(contexto).lastInsertRowid,
-  addPergunta: (id: number, pergunta: string, resposta: string) => {
-    const sessao = db.prepare(`SELECT perguntas FROM sessoes_avaliacao WHERE id = ?`).get(id) as any;
-    if (!sessao) return;
-    const perguntas = JSON.parse(sessao.perguntas);
-    perguntas.push({ pergunta, resposta });
-    db.prepare(`UPDATE sessoes_avaliacao SET perguntas = ? WHERE id = ?`).run(JSON.stringify(perguntas), id);
-  },
-  fechar: (id: number, resumo: string, gapsAbertos: number[], gapsFechados: number[]) => {
-    db.prepare(`UPDATE sessoes_avaliacao SET resumo = ?, gaps_abertos = ?, gaps_fechados = ? WHERE id = ?`)
-      .run(resumo, JSON.stringify(gapsAbertos), JSON.stringify(gapsFechados), id);
-  },
-  getUltimas: (n = 5) => db.prepare(`SELECT * FROM sessoes_avaliacao ORDER BY criado_em DESC LIMIT ?`).all(n),
 };
 
 export const historico = {
@@ -230,44 +150,19 @@ export const historico = {
     db.prepare(`INSERT INTO historico_chat (sessao_id, papel, conteudo) VALUES (?, ?, ?)`).run(sessaoId, papel, conteudo);
   },
   getSessao: (sessaoId: string, limite = 20) => {
-    return db.prepare(`SELECT papel, conteudo FROM historico_chat WHERE sessao_id = ? ORDER BY criado_em ASC LIMIT ?`).all(sessaoId, limite) as { papel: string; conteudo: string }[];
-  },
-  limpar: (sessaoId: string) => db.prepare(`DELETE FROM historico_chat WHERE sessao_id = ?`).run(sessaoId),
-};
-
-export const repository = {
-  saveFato: (chave: string, valor: string) => {
-    db.prepare(`INSERT INTO fatos (chave, valor) VALUES (?, ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor`).run(chave, valor);
-  },
-  getFato: (chave: string) => db.prepare(`SELECT valor FROM fatos WHERE chave = ?`).get(chave) as { valor: string } | undefined,
-  listFatos: () => db.prepare(`SELECT chave, valor FROM fatos`).all() as { chave: string; valor: string }[],
-};
-
-export const snippets = {
-  salvar: (descricao: string, codigo: string, linguagem = 'bash') => {
-    db.prepare(`INSERT INTO snippets (descricao, codigo, linguagem) VALUES (?, ?, ?)`).run(descricao, codigo, linguagem);
-  },
-  buscarTodos: () => db.prepare(`SELECT * FROM snippets ORDER BY criado_em DESC`).all(),
-  buscarPorPalavraChave: (palavra: string) => {
-    return db.prepare(`SELECT * FROM snippets WHERE descricao LIKE ? ORDER BY criado_em DESC LIMIT 3`).all(`%${palavra}%`) as any[];
+    return db.prepare(`SELECT papel, conteudo FROM historico_chat WHERE sessao_id = ? ORDER BY criado_em ASC LIMIT ?`).all(sessaoId, limite) as any[];
   },
 };
 
 export const cacheRespostas = {
   salvar: (pergunta: string, resposta: string) => {
-    db.prepare(`
-      INSERT INTO cache_respostas (pergunta_limpa, resposta)
-      VALUES (?, ?)
-      ON CONFLICT(pergunta_limpa) DO UPDATE SET
-        acessos    = acessos + 1,
-        ultimo_uso = CURRENT_TIMESTAMP
-    `).run(pergunta, resposta);
+    db.prepare(`INSERT INTO cache_respostas (pergunta_limpa, resposta) VALUES (?, ?) ON CONFLICT(pergunta_limpa) DO UPDATE SET acessos = acessos + 1, ultimo_uso = CURRENT_TIMESTAMP`).run(pergunta, resposta);
   },
   buscar: (pergunta: string) => {
     const row = db.prepare(`SELECT resposta FROM cache_respostas WHERE pergunta_limpa = ?`).get(pergunta) as any;
     if (row) {
       db.prepare(`UPDATE cache_respostas SET acessos = acessos + 1, ultimo_uso = CURRENT_TIMESTAMP WHERE pergunta_limpa = ?`).run(pergunta);
-      return row.resposta as string;
+      return row.resposta;
     }
     return null;
   },
@@ -283,6 +178,15 @@ export const filaLeitura = {
   marcarStatus: (id: number, status: string) => {
     db.prepare(`UPDATE fila_leitura SET status = ? WHERE id = ?`).run(status, id);
   },
+  // 👇 NOVA FUNÇÃO ADICIONADA:
+  estatisticas: () => {
+    const total = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura`).get() as any).c;
+    const pendentes = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'pendente'`).get() as any).c;
+    const processando = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'processando'`).get() as any).c;
+    const concluidos = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'concluido'`).get() as any).c;
+    const erros = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'erro'`).get() as any).c;
+    return { total, pendentes, processando, concluidos, erros };
+  }
 };
 
 export const ragDatabase = {
@@ -291,8 +195,13 @@ export const ragDatabase = {
   },
   buscarFTS: (termo: string) => {
     if (!termo || termo.length < 3) return [];
-    const termoLimpo = termo.replace(/[^\w\s]/gi, '').trim().split(' ').join(' OR ');
-    return db.prepare(`SELECT * FROM base_conhecimento WHERE base_conhecimento MATCH ? ORDER BY rank LIMIT 3`).all(termoLimpo) as any[];
+    try {
+        // Query FTS5 corrigida: o MATCH deve referenciar a tabela virtual de forma correta
+        return db.prepare(`SELECT * FROM base_conhecimento WHERE base_conhecimento MATCH ? ORDER BY rank LIMIT 3`).all(termo) as any[];
+    } catch (e) {
+        console.warn("[DB] Erro FTS5, usando busca LIKE como fallback.");
+        return db.prepare(`SELECT * FROM base_conhecimento WHERE topico LIKE ? OR resumo LIKE ? LIMIT 3`).all(`%${termo}%`, `%${termo}%`) as any[];
+    }
   },
 };
 

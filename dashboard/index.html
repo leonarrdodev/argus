@@ -64,6 +64,7 @@
         
         <section class="flex-1 flex flex-col bg-panelBg rounded-xl border border-slate-700 overflow-hidden shadow-2xl">
             
+            <!-- VIEW: CHAT (padrão) -->
             <div id="chatWindow" class="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
                 <div class="flex gap-4 max-w-3xl mb-2">
                     <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">
@@ -75,6 +76,42 @@
                             <p>Sistemas operantes, Leo. Motor RAG, Standby e NLP em linha. O que vamos estudar ou executar hoje?</p>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- VIEW: APRENDER -->
+            <div id="aprenderView" class="flex-1 overflow-y-auto p-6 flex-col gap-6 hidden">
+                <div class="flex flex-wrap gap-4 items-start">
+
+                    <!-- Card: Pipeline de Conhecimento -->
+                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 w-72 flex flex-col gap-4 shadow-lg">
+                        <h3 class="text-white font-bold text-sm">Pipeline de Conhecimento</h3>
+                        <p class="text-slate-400 text-xs">
+                            📄 Upload ➔ 🧠 Destrinchando (LLM) ➔
+                            <span id="step-salvando" class="text-slate-400">💾 Salvando (RAG)</span>
+                        </p>
+
+                        <div class="flex items-center gap-6">
+                            <div id="progress-circle" style="
+                                width: 80px; height: 80px;
+                                border-radius: 50%;
+                                background: conic-gradient(#4caf50 0%, #2c2c2c 0%);
+                                display: flex; align-items: center; justify-content: center;
+                                font-size: 1rem; font-weight: bold; flex-shrink: 0;
+                            ">
+                                <span id="progress-text" style="background: #1e293b; padding: 16px; border-radius: 50%; color: white;">0%</span>
+                            </div>
+
+                            <div class="flex flex-col gap-1 text-xs">
+                                <p class="text-slate-300"><span class="text-slate-500">Estado:</span><br><span id="worker-status" class="text-orange-400 font-bold">Aguardando...</span></p>
+                                <p class="text-slate-400">Fragmentos: <span id="worker-stats" class="text-white">0/0</span></p>
+                                <p class="text-slate-400">Erros Críticos: <span id="worker-errors" class="text-red-400 font-bold">0</span></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Próximos cards virão aqui ao lado -->
+
                 </div>
             </div>
 
@@ -131,7 +168,7 @@
     </main>
 
     <script>
-        // --- GRÁFICO (MANTIDO) ---
+        // --- GRÁFICO ---
         const ctx = document.getElementById('competencyChart').getContext('2d');
         Chart.defaults.color = '#64748b';
         new Chart(ctx, {
@@ -160,10 +197,27 @@
         // --- WEBSOCKET E CHAT ---
         const socket = io();
         const chatWindow = document.getElementById('chatWindow');
+        const aprenderView = document.getElementById('aprenderView');
         const inputMsg = document.getElementById('inputMsg');
         const btnEnviar = document.getElementById('btnEnviar');
 
         marked.setOptions({ breaks: true, gfm: true });
+
+        // --- TROCA DE VIEWS ---
+        function mostrarView(view) {
+            chatWindow.classList.add('hidden');
+            chatWindow.classList.remove('flex');
+            aprenderView.classList.add('hidden');
+            aprenderView.classList.remove('flex');
+
+            if (view === 'chat') {
+                chatWindow.classList.remove('hidden');
+                chatWindow.classList.add('flex');
+            } else if (view === 'aprender') {
+                aprenderView.classList.remove('hidden');
+                aprenderView.classList.add('flex');
+            }
+        }
 
         function appendMessage(texto, user) {
             const div = document.createElement('div');
@@ -259,7 +313,7 @@
         const btnNuvem = document.getElementById('btnNuvem');
         const btnDebian = document.getElementById('btnDebian');
         const btnSnippet = document.getElementById('btnSnippet');
-        const btnAprender = document.getElementById('btnAprender'); // NOVO BOTÃO
+        const btnAprender = document.getElementById('btnAprender');
 
         function resetarBotoes() {
             btnNuvem.className = 'text-slate-500 flex items-center gap-2 transition hover:text-blue-300 whitespace-nowrap';
@@ -273,6 +327,7 @@
             resetarBotoes();
             btnNuvem.className = 'text-blue-400 flex items-center gap-2 transition hover:text-blue-300 whitespace-nowrap';
             inputMsg.placeholder = "Faça uma pergunta ao Cérebro IA (Nuvem ou RAG)...";
+            mostrarView('chat');
         };
 
         btnDebian.onclick = () => {
@@ -280,6 +335,7 @@
             resetarBotoes();
             btnDebian.className = 'text-green-400 flex items-center gap-2 transition whitespace-nowrap';
             inputMsg.placeholder = "Digite um comando para o kernel (ex: ram, cpu, status)...";
+            mostrarView('chat');
         };
 
         btnSnippet.onclick = () => {
@@ -287,6 +343,7 @@
             resetarBotoes();
             btnSnippet.className = 'text-yellow-400 flex items-center gap-2 transition whitespace-nowrap';
             inputMsg.placeholder = "Formato Snippet -> Descrição : Comando/Código";
+            mostrarView('chat');
         };
 
         btnAprender.onclick = () => {
@@ -294,6 +351,7 @@
             resetarBotoes();
             btnAprender.className = 'text-purple-400 flex items-center gap-2 transition whitespace-nowrap';
             inputMsg.placeholder = "Formato Rápido -> Tópico : Explicação";
+            mostrarView('aprender');
         };
 
         btnEnviar.onclick = () => {
@@ -304,7 +362,6 @@
             socket.emit('mensagem_web', { texto: msg, alvo: alvoAtual });
             inputMsg.value = '';
             
-            // Voltar para a nuvem automaticamente se não for chat comum
             if (alvoAtual === 'snippet' || alvoAtual === 'aprender') {
                 btnNuvem.click();
             } else {
@@ -320,7 +377,7 @@
             appendMessage(dados.texto, 'Argus');
         });
 
-        // --- SISTEMA DE UPLOAD DE PDFs ---
+        // --- UPLOAD DE PDFs ---
         const btnAnexo = document.getElementById('btnAnexo');
         const fileUpload = document.getElementById('fileUpload');
 
@@ -353,6 +410,43 @@
             }
             fileUpload.value = ''; 
         };
+
+        // --- SOCKET: STATUS DE APRENDIZADO ---
+        socket.on('status_aprendizado', (stats) => {
+            const { total, pendentes, processando, concluidos, erros } = stats;
+
+            let porcentagem = 0;
+            if (total > 0) {
+                porcentagem = Math.round(((concluidos + erros) / total) * 100);
+            }
+
+            const circle = document.getElementById('progress-circle');
+            circle.style.background = `conic-gradient(#4caf50 ${porcentagem}%, #2c2c2c ${porcentagem}%)`;
+            document.getElementById('progress-text').innerText = `${porcentagem}%`;
+            document.getElementById('worker-stats').innerText = `${concluidos + erros} / ${total}`;
+            document.getElementById('worker-errors').innerText = erros;
+
+            const statusEl = document.getElementById('worker-status');
+            const stepSalvando = document.getElementById('step-salvando');
+
+            if (processando > 0) {
+                statusEl.innerText = 'Rodando ⚙️';
+                statusEl.style.color = '#4caf50';
+                stepSalvando.style.color = '#4caf50';
+            } else if (pendentes > 0) {
+                statusEl.innerText = 'Pausado / Esperando API ⏳';
+                statusEl.style.color = '#ff9800';
+                stepSalvando.style.color = '#aaa';
+            } else if (total > 0 && pendentes === 0 && processando === 0) {
+                statusEl.innerText = 'Concluído ✅';
+                statusEl.style.color = '#2196f3';
+                stepSalvando.style.color = '#2196f3';
+            } else {
+                statusEl.innerText = 'Fila Vazia';
+                statusEl.style.color = '#888';
+                stepSalvando.style.color = '#aaa';
+            }
+        });
     </script>
 </body>
 </html>

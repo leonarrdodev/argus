@@ -74,7 +74,7 @@ def tentar_gemini(mensagens: list, instrucao: str) -> str:
     response.raise_for_status()
     return response.json()['candidates'][0]['content']['parts'][0]['text']
 
-def tentar_groq(mensagens: list, instrucao: str) -> str:
+def tentar_groq(mensagens: list, instrucao: str, json_mode: bool = False) -> str:
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
 
@@ -86,6 +86,10 @@ def tentar_groq(mensagens: list, instrucao: str) -> str:
         "model": "llama-3.1-8b-instant",
         "messages": messages
     }
+    
+    # Força a API do Groq a retornar ESTRITAMENTE um JSON válido
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
 
     response = requests.post(url, headers=headers, json=payload, timeout=20)
     response.raise_for_status()
@@ -132,10 +136,17 @@ def acao_extrair(dados: dict) -> dict:
 
     try:
         resposta = tentar_gemini(mensagens, instrucao)
-        resposta = resposta.replace('```json', '').replace('```', '').strip()
-        return {"status": "success", "response": resposta}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        print(f"[Aviso] Falha no Gemini (Extração), tentando Groq: {e}", file=sys.stderr)
+        try:
+            # AQUI: Ativamos o json_mode para o Llama não tagarelar
+            resposta = tentar_groq(mensagens, instrucao, json_mode=True)
+        except Exception as e2:
+            return {"status": "error", "message": f"Gemini e Groq falharam: {e2}"}
+
+    # Limpa a resposta (útil tanto pro Gemini quanto pro Groq, que às vezes mandam crases)
+    resposta = resposta.replace('```json', '').replace('```', '').strip()
+    return {"status": "success", "response": resposta}
 
 def acao_consolidar(dados: dict) -> dict:
     fatos = dados.get("fatos", [])
