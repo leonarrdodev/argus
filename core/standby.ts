@@ -1,68 +1,75 @@
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
-import pdfParse from 'pdf-parse';
-import { baseConhecimento } from './database.js';
+import { createRequire } from 'node:module';
+import { filaLeitura } from './database.js';
+
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 
 export class StandbyMonitor {
     private isReading = false;
-    private docsPath = path.join(process.cwd(), 'docs_pendentes');
+    private docsPath  = path.join(os.homedir(), 'argus/docs_pendentes');
 
     constructor() {
-        // Cria a pasta para onde deves atirar os PDFs
         if (!fs.existsSync(this.docsPath)) {
             fs.mkdirSync(this.docsPath, { recursive: true });
         }
-        
-        // Inicia o ciclo de verificação (corre a cada 1 minuto)
-        setInterval(() => this.verificarOciosidade(), 60000);
-        console.log('[STANDBY] Monitor de CPU ativado. A aguardar ociosidade...');
+
+        setInterval(() => this.verificarOciosidade(), 60_000);
+        console.log(`[STANDBY] Monitor de pasta ativado em: ${this.docsPath}`);
     }
 
     private async verificarOciosidade() {
         if (this.isReading) return;
 
-        // Verifica a carga da CPU no último 1 minuto
-        const cpuLoad = os.loadavg()[0];
+        const cpuLoad  = os.loadavg()[0];
         const numCores = os.cpus().length;
-        
-        // Se a carga for menor que 50% dos núcleos, o servidor está "tranquilo"
-        if (cpuLoad < (numCores * 0.5)) {
-            await this.estudarProximoDocumento();
+
+        if (cpuLoad < numCores * 0.5) {
+            await this.enfileirarProximoDocumento();
         }
     }
 
-    private async estudarProximoDocumento() {
+    private async enfileirarProximoDocumento() {
         const files = fs.readdirSync(this.docsPath).filter(f => f.endsWith('.pdf'));
         if (files.length === 0) return;
 
         this.isReading = true;
-        const arquivo = files[0];
+        const arquivo  = files[0]!;
         const filePath = path.join(this.docsPath, arquivo);
 
-        console.log(`[STANDBY] CPU ociosa. A extrair conhecimentos de: ${arquivo}...`);
+        console.log(`[STANDBY] CPU ociosa. Enfileirando fragmentos de: ${arquivo}...`);
 
         try {
-            const dataBuffer = fs.readFileSync(filePath);
-            const data = await pdfParse(dataBuffer);
-            
-            // Divide o texto extraído em parágrafos/fragmentos
-            const fragmentos = data.text.split('\n\n').filter(t => t.trim().length > 50);
+            const buffer = fs.readFileSync(filePath);
+            const data   = await pdfParse(buffer);
 
-            // Grava os fragmentos na base de dados
-            let salvos = 0;
-            for (const frag of fragmentos) {
-                baseConhecimento.salvarFragmento(arquivo, 1, frag.trim());
-                salvos++;
+            const paragrafos = data.text.split('\n\n').filter((t: string) => t.trim().length > 50);
+            let chunkAtual   = '';
+            let total        = 0;
+
+            for (const p of paragrafos) {
+                if (chunkAtual.length + p.length > 1000) {
+                    filaLeitura.adicionar(arquivo, chunkAtual.trim());
+                    total++;
+                    chunkAtual = p + '\n\n';
+                } else {
+                    chunkAtual += p + '\n\n';
+                }
             }
 
-            console.log(`[STANDBY] Memorizou ${salvos} fragmentos de ${arquivo}.`);
-            
-            // Move o ficheiro para não o ler novamente
+            if (chunkAtual.trim().length > 0) {
+                filaLeitura.adicionar(arquivo, chunkAtual.trim());
+                total++;
+            }
+
+            console.log(`[STANDBY] ${total} fragmentos de "${arquivo}" adicionados à fila de extração.`);
+
             fs.renameSync(filePath, path.join(this.docsPath, `${arquivo}.lido`));
 
         } catch (error) {
-            console.error(`[STANDBY] Erro ao ler PDF:`, error);
+            console.error(`[STANDBY] Erro ao processar PDF:`, error);
         } finally {
             this.isReading = false;
         }
