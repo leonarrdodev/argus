@@ -1,8 +1,8 @@
 import sys
 import json
 import os
-import requests
 import sqlite3
+import requests
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
@@ -11,39 +11,48 @@ GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_KEY   = os.getenv("GROQ_API_KEY")
 DB_PATH    = os.path.join(os.path.dirname(__file__), '../data/argus.sqlite')
 
-# ─── Memória (SQLite como fonte única) ────────────────────────────────────────
+# ─── Contexto de perfil ───────────────────────────────────────────────────────
 
 def buscar_contexto_perfil() -> str:
-    try:
-        if not os.path.exists(DB_PATH):
-            return ""
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
+    if not os.path.exists(DB_PATH):
+        return ""
 
+    try:
+        conn   = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
         partes = []
 
-        cursor.execute("SELECT area, nivel, confianca FROM habilidades ORDER BY confianca DESC LIMIT 10")
+        cursor.execute(
+            "SELECT area, nivel, confianca FROM habilidades ORDER BY confianca DESC LIMIT 10"
+        )
         habs = cursor.fetchall()
         if habs:
             partes.append("[HABILIDADES DO LEO]\n" + "\n".join(
-                f"- {area}: nível {nivel}, confiança {confianca}%" for area, nivel, confianca in habs
+                f"- {area}: nível {nivel}, confiança {confianca}%"
+                for area, nivel, confianca in habs
             ))
 
-        cursor.execute("SELECT conceito, area FROM gaps WHERE status != 'resolvido' ORDER BY criado_em DESC LIMIT 5")
+        cursor.execute(
+            "SELECT conceito, area FROM gaps WHERE status != 'resolvido' ORDER BY criado_em DESC LIMIT 5"
+        )
         gaps = cursor.fetchall()
         if gaps:
             partes.append("[GAPS CONHECIDOS]\n" + "\n".join(
                 f"- {conceito} ({area or 'geral'})" for conceito, area in gaps
             ))
 
-        cursor.execute("SELECT categoria, chave, valor FROM preferencias ORDER BY categoria LIMIT 20")
+        cursor.execute(
+            "SELECT categoria, chave, valor FROM preferencias ORDER BY categoria LIMIT 20"
+        )
         prefs = cursor.fetchall()
         if prefs:
             partes.append("[PREFERÊNCIAS]\n" + "\n".join(
                 f"- {categoria}/{chave}: {valor}" for categoria, chave, valor in prefs
             ))
 
-        cursor.execute("SELECT descricao, codigo, linguagem FROM snippets ORDER BY criado_em DESC LIMIT 10")
+        cursor.execute(
+            "SELECT descricao, codigo, linguagem FROM snippets ORDER BY criado_em DESC LIMIT 10"
+        )
         snips = cursor.fetchall()
         if snips:
             partes.append("[SNIPPETS DO LEO]\n" + "\n".join(
@@ -52,13 +61,17 @@ def buscar_contexto_perfil() -> str:
 
         conn.close()
         return "\n\n".join(partes)
+
     except Exception as e:
         return f"[Erro ao carregar perfil: {e}]"
 
-# ─── LLM ──────────────────────────────────────────────────────────────────────
+# ─── LLMs ─────────────────────────────────────────────────────────────────────
 
 def tentar_gemini(mensagens: list, instrucao: str) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta"
+        f"/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+    )
 
     contents = []
     for msg in mensagens:
@@ -67,33 +80,39 @@ def tentar_gemini(mensagens: list, instrucao: str) -> str:
 
     payload = {
         "system_instruction": {"parts": [{"text": instrucao}]},
-        "contents": contents
+        "contents": contents,
     }
 
     response = requests.post(url, json=payload, timeout=20)
     response.raise_for_status()
-    return response.json()['candidates'][0]['content']['parts'][0]['text']
+    return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+
 
 def tentar_groq(mensagens: list, instrucao: str, json_mode: bool = False) -> str:
-    url = "https://api.groq.com/openai/v1/chat/completions"
+    url     = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
 
     messages = [{"role": "system", "content": instrucao}]
     for msg in mensagens:
+        # historico salva "assistant", Groq espera "assistant" — compatível
         messages.append({"role": msg["papel"], "content": msg["conteudo"]})
 
-    payload = {
-        "model": "llama-3.1-8b-instant",
-        "messages": messages
-    }
-    
-    # Força a API do Groq a retornar ESTRITAMENTE um JSON válido
+    payload: dict = {"model": "llama-3.1-8b-instant", "messages": messages}
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
 
     response = requests.post(url, headers=headers, json=payload, timeout=20)
     response.raise_for_status()
-    return response.json()['choices'][0]['message']['content']
+    return response.json()["choices"][0]["message"]["content"]
+
+
+def chamar_llm(mensagens: list, instrucao: str, json_mode: bool = False) -> str:
+    """Tenta Gemini primeiro, cai no Groq se falhar."""
+    try:
+        return tentar_gemini(mensagens, instrucao)
+    except Exception as e:
+        print(f"[Aviso] Gemini falhou: {e}. Tentando Groq...", file=sys.stderr)
+        return tentar_groq(mensagens, instrucao, json_mode=json_mode)
 
 # ─── Ações ────────────────────────────────────────────────────────────────────
 
@@ -112,15 +131,11 @@ def acao_chat(dados: dict) -> dict:
         f"{contexto_rag}"
     ).strip()
 
-    # Monta histórico + mensagem atual
     mensagens = list(historico) + [{"papel": "user", "conteudo": texto}]
 
-    try:
-        resposta = tentar_gemini(mensagens, instrucao)
-    except Exception:
-        resposta = "(Redundância Groq) " + tentar_groq(mensagens, instrucao)
-
+    resposta = chamar_llm(mensagens, instrucao)
     return {"status": "success", "response": resposta}
+
 
 def acao_extrair(dados: dict) -> dict:
     fragmento = dados.get("text", "")
@@ -135,53 +150,30 @@ def acao_extrair(dados: dict) -> dict:
     mensagens = [{"papel": "user", "conteudo": fragmento}]
 
     try:
-        resposta = tentar_gemini(mensagens, instrucao)
+        resposta = chamar_llm(mensagens, instrucao, json_mode=True)
+        resposta = resposta.replace("```json", "").replace("```", "").strip()
+        # Valida se é JSON antes de retornar
+        json.loads(resposta)
+        return {"status": "success", "response": resposta}
+    except json.JSONDecodeError as e:
+        return {"status": "error", "message": f"Resposta do LLM não é JSON válido: {e}"}
     except Exception as e:
-        print(f"[Aviso] Falha no Gemini (Extração), tentando Groq: {e}", file=sys.stderr)
-        try:
-            # AQUI: Ativamos o json_mode para o Llama não tagarelar
-            resposta = tentar_groq(mensagens, instrucao, json_mode=True)
-        except Exception as e2:
-            return {"status": "error", "message": f"Gemini e Groq falharam: {e2}"}
+        return {"status": "error", "message": str(e)}
 
-    # Limpa a resposta (útil tanto pro Gemini quanto pro Groq, que às vezes mandam crases)
-    resposta = resposta.replace('```json', '').replace('```', '').strip()
-    return {"status": "success", "response": resposta}
 
 def acao_consolidar(dados: dict) -> dict:
     fatos = dados.get("fatos", [])
 
     instrucao = (
         "Você é o ARGUS. Consolide os fatos abaixo em um resumo técnico conciso "
-        "do que o Leo aprendeu ou registrou hoje."
+        "do que o Leo aprendeu ou registrou."
     )
 
-    conteudo = "\n".join(f"- {f['chave']}: {f['valor']}" for f in fatos) or "Nenhum fato registrado."
+    conteudo  = "\n".join(f"- {f['chave']}: {f['valor']}" for f in fatos) or "Nenhum fato registrado."
     mensagens = [{"papel": "user", "conteudo": conteudo}]
 
     try:
-        resposta = tentar_gemini(mensagens, instrucao)
-        return {"status": "success", "response": resposta}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-def acao_analisar_dados(dados: dict) -> dict:
-    url_arquivo = dados.get("url", "")
-    pergunta    = dados.get("text", "Faça um resumo analítico deste documento.")
-
-    instrucao = "Você é o ARGUS. Analise o conteúdo fornecido e responda à pergunta do Leo de forma técnica e direta."
-
-    try:
-        response = requests.get(url_arquivo, timeout=30)
-        response.raise_for_status()
-        conteudo_bruto = response.text[:8000]
-    except Exception as e:
-        return {"status": "error", "message": f"Falha ao baixar arquivo: {e}"}
-
-    mensagens = [{"papel": "user", "conteudo": f"{pergunta}\n\n[CONTEÚDO]\n{conteudo_bruto}"}]
-
-    try:
-        resposta = tentar_gemini(mensagens, instrucao)
+        resposta = chamar_llm(mensagens, instrucao)
         return {"status": "success", "response": resposta}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -189,17 +181,15 @@ def acao_analisar_dados(dados: dict) -> dict:
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding="utf-8")
     try:
-        dados = json.loads(sys.stdin.read())
-        tipo  = dados.get("tipo", "chat")
+        dados     = json.loads(sys.stdin.read())
+        tipo      = dados.get("tipo", "chat")
 
         if tipo == "extrair":
             resultado = acao_extrair(dados)
         elif tipo == "consolidar":
             resultado = acao_consolidar(dados)
-        elif tipo == "analisar_dados":
-            resultado = acao_analisar_dados(dados)
         else:
             resultado = acao_chat(dados)
 

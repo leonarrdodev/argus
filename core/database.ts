@@ -11,7 +11,6 @@ const db = new Database(path.join(dataDir, 'argus.sqlite'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
-// Esquema do Banco de Dados
 db.exec(`
   CREATE TABLE IF NOT EXISTS projetos (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,29 +106,18 @@ db.exec(`
     status      TEXT    NOT NULL DEFAULT 'pendente',
     criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-
-  CREATE TABLE IF NOT EXISTS fila_leitura (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    fonte       TEXT    NOT NULL,
-    conteudo    TEXT    NOT NULL,
-    status      TEXT    NOT NULL DEFAULT 'pendente',
-    criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
 `);
 
-db.exec(`DROP TABLE IF EXISTS base_conhecimento;`);
-
 db.exec(`
-  CREATE VIRTUAL TABLE base_conhecimento USING fts5(
+  CREATE VIRTUAL TABLE IF NOT EXISTS base_conhecimento USING fts5(
     fonte,
     topico,
     resumo,
     tags,
-    tokenize='porter'
+    tokenize='unicode61'
   );
 `);
 
-// Exportação dos módulos de acesso
 export const snippets = {
   salvar: (descricao: string, codigo: string, linguagem = 'bash') => {
     db.prepare(`INSERT INTO snippets (descricao, codigo, linguagem) VALUES (?, ?, ?)`).run(descricao, codigo, linguagem);
@@ -162,7 +150,7 @@ export const cacheRespostas = {
     const row = db.prepare(`SELECT resposta FROM cache_respostas WHERE pergunta_limpa = ?`).get(pergunta) as any;
     if (row) {
       db.prepare(`UPDATE cache_respostas SET acessos = acessos + 1, ultimo_uso = CURRENT_TIMESTAMP WHERE pergunta_limpa = ?`).run(pergunta);
-      return row.resposta;
+      return row.resposta as string;
     }
     return null;
   },
@@ -178,15 +166,14 @@ export const filaLeitura = {
   marcarStatus: (id: number, status: string) => {
     db.prepare(`UPDATE fila_leitura SET status = ? WHERE id = ?`).run(status, id);
   },
-  // 👇 NOVA FUNÇÃO ADICIONADA:
   estatisticas: () => {
-    const total = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura`).get() as any).c;
-    const pendentes = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'pendente'`).get() as any).c;
-    const processando = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'processando'`).get() as any).c;
-    const concluidos = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'concluido'`).get() as any).c;
-    const erros = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'erro'`).get() as any).c;
+    const total       = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura`).get() as any).c as number;
+    const pendentes   = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'pendente'`).get() as any).c as number;
+    const processando = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'processando'`).get() as any).c as number;
+    const concluidos  = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'concluido'`).get() as any).c as number;
+    const erros       = (db.prepare(`SELECT COUNT(*) as c FROM fila_leitura WHERE status = 'erro'`).get() as any).c as number;
     return { total, pendentes, processando, concluidos, erros };
-  }
+  },
 };
 
 export const ragDatabase = {
@@ -196,11 +183,10 @@ export const ragDatabase = {
   buscarFTS: (termo: string) => {
     if (!termo || termo.length < 3) return [];
     try {
-        // Query FTS5 corrigida: o MATCH deve referenciar a tabela virtual de forma correta
-        return db.prepare(`SELECT * FROM base_conhecimento WHERE base_conhecimento MATCH ? ORDER BY rank LIMIT 3`).all(termo) as any[];
-    } catch (e) {
-        console.warn("[DB] Erro FTS5, usando busca LIKE como fallback.");
-        return db.prepare(`SELECT * FROM base_conhecimento WHERE topico LIKE ? OR resumo LIKE ? LIMIT 3`).all(`%${termo}%`, `%${termo}%`) as any[];
+      return db.prepare(`SELECT * FROM base_conhecimento WHERE base_conhecimento MATCH ? ORDER BY rank LIMIT 3`).all(termo) as any[];
+    } catch {
+      console.warn('[DB] Erro FTS5, usando busca LIKE como fallback.');
+      return db.prepare(`SELECT * FROM base_conhecimento WHERE topico LIKE ? OR resumo LIKE ? LIMIT 3`).all(`%${termo}%`, `%${termo}%`) as any[];
     }
   },
 };

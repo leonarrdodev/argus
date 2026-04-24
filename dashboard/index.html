@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HQ Argus - Dashboard de Controle</title>
+    <title>HQ Argus - Dashboard Operacional</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     
     <script>
         tailwind.config = {
@@ -19,17 +20,20 @@
                         darkBg: '#0f172a',
                         panelBg: '#1e293b',
                         userBubble: '#475569',
+                        argusCore: '#3b82f6'
                     }
                 }
             }
         }
     </script>
     <style>
+        /* Estilos Gerais e Scrollbar */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #1e293b; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
+        /* Estilos do Markdown (Chat IA) */
         .markdown-bot p { margin-bottom: 0.75rem; }
         .markdown-bot p:last-child { margin-bottom: 0; }
         .markdown-bot strong { font-weight: 700; color: #93c5fd; }
@@ -39,414 +43,782 @@
         .markdown-bot pre { background-color: rgba(0,0,0,0.5); padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-bottom: 1rem; }
         .markdown-bot pre code { background-color: transparent; padding: 0; }
         .markdown-bot h1, .markdown-bot h2, .markdown-bot h3 { font-weight: bold; color: #bfdbfe; margin-top: 1rem; margin-bottom: 0.5rem; }
+
+        /* ── DEEP MIND (Motor de Física Obsidian Style) ── */
+        #cosmos { position: absolute; inset: 0; z-index: 0; }
+        .vignette { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(ellipse 100% 100% at 50% 50%, transparent 20%, rgba(15,23,42,0.98) 100%); }
+        #stage { position: absolute; inset: 0; z-index: 3; overflow: hidden; cursor: grab; }
+        #stage:active { cursor: grabbing; }
+        #svg-connections { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 1; }
+        
+        .obs-node-container { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 5; cursor: pointer; pointer-events: all; transition: opacity 0.3s ease; user-select: none; }
+        .obs-node-dot { border-radius: 50%; transition: transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        .obs-node-label { font-size: 11px; font-family: sans-serif; color: #cbd5e1; white-space: nowrap; text-shadow: 0px 2px 4px rgba(0,0,0,0.8); pointer-events: none; transition: color 0.2s; }
+        .obs-node-fixed { cursor: default !important; }
+
+        /* Efeitos Hover Deep Mind */
+        .obs-dimmed { opacity: 0.15 !important; }
+        .obs-highlight-node .obs-node-dot { transform: scale(1.2); box-shadow: 0 0 20px currentColor; }
+        .obs-highlight-node .obs-node-label { color: #fff; font-weight: bold; }
+        .obs-link { stroke: #475569; stroke-width: 1px; transition: stroke-opacity 0.3s, stroke-width 0.2s; }
+        .obs-link-highlight { stroke-width: 2px; stroke-opacity: 0.9 !important; }
+        .obs-link-dimmed { stroke-opacity: 0.1; }
+        
+        #dm-data-panel { position: fixed; z-index: 100; opacity: 0; pointer-events: none; background: rgba(15, 23, 42, 0.95); border: 1px solid #334155; border-radius: 8px; padding: 12px; width: 240px; font-size: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); transition: opacity 0.2s ease, transform 0.2s ease; transform: translateY(10px); color: #cbd5e1; }
+        #dm-data-panel.visible { opacity: 1; transform: translateY(0); }
+        .dm-panel-header { font-weight: bold; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #334155; }
+        .dm-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase; margin-bottom: 6px; }
+
+        /* ── ABA IDEIAS (Sortable Keep Style) ── */
+        .idea-card { cursor: grab; transition: transform 0.1s; }
+        .idea-card:active { cursor: grabbing; transform: scale(0.98); }
+        .sortable-ghost { opacity: 0.4; border: 2px dashed #3b82f6; background-color: rgba(59, 130, 246, 0.1); }
+        
+        /* Utility */
+        .paused-pulse { animation: none !important; }
     </style>
 </head>
 <body class="bg-darkBg text-slate-300 h-screen overflow-hidden flex flex-col font-sans">
 
-    <header class="flex items-center justify-between px-6 py-4 border-b border-slate-700 bg-panelBg shadow-md">
+    <header class="flex items-center justify-between px-6 py-4 border-b border-slate-700 bg-panelBg shadow-md z-50 relative">
         <div class="flex items-center gap-6">
             <h1 class="text-2xl font-bold text-white flex items-center gap-2">
                 <i class="fa-solid fa-owl text-blue-500"></i> HQ Argus
             </h1>
-            <nav class="flex gap-4">
-                <button class="bg-slate-700 text-white px-4 py-1 rounded-md text-sm font-medium">Chat de Análise</button>
-                <button class="text-slate-400 hover:text-white px-4 py-1 text-sm transition">Meu Perfil</button>
-                <button class="text-slate-400 hover:text-white px-4 py-1 text-sm transition">Configurações</button>
+            <nav class="flex gap-2">
+                <button id="btnNavDashboard" class="bg-blue-600 text-white px-4 py-1 rounded-md text-sm font-medium transition shadow-lg shadow-blue-500/20">Painel Operacional</button>
+                <button id="btnNavDeepMind" class="text-slate-400 hover:text-blue-400 hover:bg-slate-800 px-4 py-1 rounded-md text-sm font-medium transition flex items-center gap-2">
+                    <i class="fa-solid fa-diagram-project"></i> Deep Mind
+                </button>
+                <button id="btnNavPerfil" class="text-slate-400 hover:text-white hover:bg-slate-800 px-4 py-1 rounded-md text-sm font-medium transition flex items-center gap-2">
+                    <i class="fa-solid fa-user-astronaut"></i> Meu Perfil
+                </button>
+                <button class="text-slate-400 hover:text-white hover:bg-slate-800 px-4 py-1 rounded-md text-sm transition">Configurações</button>
             </nav>
         </div>
         <div class="flex items-center gap-3">
-            <span class="flex h-2 w-2 rounded-full bg-green-500"></span>
+            <span class="flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e] animate-pulse"></span>
             <span class="text-xs font-mono text-slate-400">SERVER ONLINE: 192.168.1.200</span>
         </div>
     </header>
 
-    <main class="flex-1 flex overflow-hidden p-4 gap-4">
+    <main class="flex-1 flex overflow-hidden p-4 gap-4 relative">
         
-        <section class="flex-1 flex flex-col bg-panelBg rounded-xl border border-slate-700 overflow-hidden shadow-2xl">
-            
-            <!-- VIEW: CHAT (padrão) -->
-            <div id="chatWindow" class="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-                <div class="flex gap-4 max-w-3xl mb-2">
-                    <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">
-                        <i class="fa-solid fa-robot"></i>
-                    </div>
-                    <div>
-                        <span class="text-[10px] text-slate-500 font-bold mb-1 block">ARGUS</span>
-                        <div class="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30 text-white p-4 shadow-sm text-sm">
-                            <p>Sistemas operantes, Leo. Motor RAG, Standby e NLP em linha. O que vamos estudar ou executar hoje?</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- VIEW: APRENDER -->
-            <div id="aprenderView" class="flex-1 overflow-y-auto p-6 flex-col gap-6 hidden">
-                <div class="flex flex-wrap gap-4 items-start">
-
-                    <!-- Card: Pipeline de Conhecimento -->
-                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 w-72 flex flex-col gap-4 shadow-lg">
-                        <h3 class="text-white font-bold text-sm">Pipeline de Conhecimento</h3>
-                        <p class="text-slate-400 text-xs">
-                            📄 Upload ➔ 🧠 Destrinchando (LLM) ➔
-                            <span id="step-salvando" class="text-slate-400">💾 Salvando (RAG)</span>
-                        </p>
-
-                        <div class="flex items-center gap-6">
-                            <div id="progress-circle" style="
-                                width: 80px; height: 80px;
-                                border-radius: 50%;
-                                background: conic-gradient(#4caf50 0%, #2c2c2c 0%);
-                                display: flex; align-items: center; justify-content: center;
-                                font-size: 1rem; font-weight: bold; flex-shrink: 0;
-                            ">
-                                <span id="progress-text" style="background: #1e293b; padding: 16px; border-radius: 50%; color: white;">0%</span>
-                            </div>
-
-                            <div class="flex flex-col gap-1 text-xs">
-                                <p class="text-slate-300"><span class="text-slate-500">Estado:</span><br><span id="worker-status" class="text-orange-400 font-bold">Aguardando...</span></p>
-                                <p class="text-slate-400">Fragmentos: <span id="worker-stats" class="text-white">0/0</span></p>
-                                <p class="text-slate-400">Erros Críticos: <span id="worker-errors" class="text-red-400 font-bold">0</span></p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Próximos cards virão aqui ao lado -->
-
-                </div>
-            </div>
-
-            <div class="px-6 py-2 border-t border-slate-700 flex items-center gap-6 text-xs font-bold text-slate-500 bg-slate-800/50 overflow-x-auto scrollbar-hide">
-                <span class="tracking-widest opacity-50">CONEXÃO:</span>
-                <button id="btnNuvem" class="text-blue-400 flex items-center gap-2 transition hover:text-blue-300 whitespace-nowrap">
-                    <i class="fa-solid fa-cloud"></i> CÉREBRO (IA)
-                </button>
-                <button id="btnDebian" class="text-slate-500 flex items-center gap-2 transition hover:text-green-400 whitespace-nowrap">
-                    <i class="fa-solid fa-server"></i> DEBIAN (LOCAL)
-                </button>
-                <button id="btnSnippet" class="text-slate-500 flex items-center gap-2 transition hover:text-yellow-400 whitespace-nowrap">
-                    <i class="fa-solid fa-code"></i> SALVAR SNIPPET
-                </button>
-                <button id="btnAprender" class="text-slate-500 flex items-center gap-2 transition hover:text-purple-400 whitespace-nowrap">
-                    <i class="fa-solid fa-brain"></i> APRENDER
-                </button>
-            </div>
-
-            <div class="p-4 bg-panelBg border-t border-slate-700">
-                <input type="file" id="fileUpload" accept=".pdf" style="display: none;">
+        <div id="layoutDashboard" class="flex-1 flex gap-4 overflow-hidden w-full h-full">
+            <section class="flex-1 flex flex-col bg-panelBg rounded-xl border border-slate-700 overflow-hidden shadow-2xl relative">
                 
-                <div class="relative flex items-center bg-slate-800 rounded-lg border border-slate-600 p-1 focus-within:border-blue-500 transition shadow-inner">
-                    <button id="btnAnexo" class="p-3 text-slate-400 hover:text-white transition" title="Enviar PDF para estudo">
-                        <i class="fa-solid fa-paperclip"></i>
-                    </button>
-                    <input type="text" id="inputMsg" placeholder="Escreva um comando ou pergunte algo ao Cérebro..." class="flex-1 bg-transparent border-none text-white focus:outline-none p-2 text-sm autocomplete-off">
-                    <button id="btnEnviar" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-md transition font-bold text-sm mr-1">ENVIAR</button>
-                </div>
-            </div>
-        </section>
-
-        <aside class="w-80 flex flex-col gap-4 overflow-y-auto">
-            
-            <div class="bg-panelBg rounded-xl border border-slate-700 p-5 shadow-lg">
-                <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Painel do Sistema</h2>
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-slate-700 to-slate-500 flex items-center justify-center text-white text-xl font-bold shadow-md">L</div>
-                    <div>
-                        <p class="text-white font-bold">Leo</p>
-                        <p class="text-[10px] text-blue-400 font-mono uppercase">Admin - Eng. Backend</p>
+                <div id="chatWindow" class="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+                    <div class="flex gap-4 max-w-3xl mb-2">
+                        <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">
+                            <i class="fa-solid fa-robot"></i>
+                        </div>
+                        <div>
+                            <span class="text-[10px] text-slate-500 font-bold mb-1 block">ARGUS</span>
+                            <div class="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30 text-white p-4 shadow-sm text-sm">
+                                <p>Sistemas operantes, Leo. Motor RAG e NLP em linha. Qual será o foco da nossa engenharia hoje?</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
+                <div id="debianView" class="flex-1 overflow-y-auto p-6 flex-col gap-6 hidden">
+                    <div class="flex gap-4 max-w-3xl mb-2">
+                        <div class="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">
+                            <i class="fa-solid fa-server"></i>
+                        </div>
+                        <div>
+                            <span class="text-[10px] text-slate-500 font-bold mb-1 block">COMPAQ 510 SERVER</span>
+                            <div class="bg-gradient-to-r from-green-900 to-emerald-900 rounded-r-xl rounded-bl-xl border border-green-800/30 text-green-100 p-4 shadow-sm text-sm font-mono">
+                                <p>Conexão SSH (leo@192.168.1.200) estabelecida com sucesso.<br>Aguardando comandos do shell...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="snippetView" class="flex-1 overflow-y-auto p-6 flex-col gap-6 hidden">
+                    <div class="flex gap-4 max-w-3xl mb-2">
+                        <div class="w-8 h-8 rounded-full bg-yellow-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">
+                            <i class="fa-solid fa-code"></i>
+                        </div>
+                        <div>
+                            <span class="text-[10px] text-slate-500 font-bold mb-1 block">REPOSITÓRIO DE CÓDIGO</span>
+                            <div class="bg-gradient-to-r from-yellow-900 to-orange-900 rounded-r-xl rounded-bl-xl border border-yellow-800/30 text-white p-4 shadow-sm text-sm">
+                                <p>Módulo de Snippets ativado. Envie um bloco de código via chat abaixo para arquivar.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="ideiasView" class="flex-1 overflow-y-auto p-6 flex flex-col gap-6 hidden bg-slate-900/50">
+                    <div class="flex items-center justify-between border-b border-slate-700 pb-4">
+                        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-lightbulb text-yellow-400"></i> Repositório de Ideias
+                        </h2>
+                        <button id="btnAddIdea" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 shadow-lg shadow-blue-900/40">
+                            <i class="fa-solid fa-plus"></i> NOVA IDEIA
+                        </button>
+                    </div>
+
+                    <div id="ideasGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-10">
+                        <div class="idea-card bg-slate-800 border-l-4 border-blue-500 p-4 rounded-lg shadow-md hover:bg-slate-700/50 transition">
+                            <h4 class="text-blue-400 font-bold text-sm mb-1 uppercase tracking-tight">ScanIP CLI: Automação VPN</h4>
+                            <p class="text-slate-300 text-xs mt-2">Implementar um script interno no Node.js que consiga dar bypass em rotas VPN automaticamente durante o diagnóstico.</p>
+                            <div class="mt-4 pt-3 border-t border-slate-700 flex justify-between items-center text-[10px] text-slate-500 font-bold">
+                                <span>PROJETO EXISTENTE</span>
+                                <i class="fa-solid fa-grip-lines hover:text-white transition"></i>
+                            </div>
+                        </div>
+                        <div class="idea-card bg-slate-800 border-l-4 border-yellow-500 p-4 rounded-lg shadow-md hover:bg-slate-700/50 transition">
+                            <h4 class="text-yellow-400 font-bold text-sm mb-1 uppercase tracking-tight">Argus Assistant Core</h4>
+                            <p class="text-slate-300 text-xs mt-2">Finalizar arquitetura Fastify/TypeScript. Conectar o backend à API nativa do Gemini para NLP.</p>
+                            <div class="mt-4 pt-3 border-t border-slate-700 flex justify-between items-center text-[10px] text-slate-500 font-bold">
+                                <span>NOVO PROJETO</span>
+                                <i class="fa-solid fa-grip-lines hover:text-white transition"></i>
+                            </div>
+                        </div>
+                        <div class="idea-card bg-slate-800 border-l-4 border-green-500 p-4 rounded-lg shadow-md hover:bg-slate-700/50 transition">
+                            <h4 class="text-green-400 font-bold text-sm mb-1 uppercase tracking-tight">Homelab Upgrades</h4>
+                            <p class="text-slate-300 text-xs mt-2">Pesquisar peças para montar desktop de virtualização (Ryzen 5 5600GT) e aposentar o Compaq.</p>
+                            <div class="mt-4 pt-3 border-t border-slate-700 flex justify-between items-center text-[10px] text-slate-500 font-bold">
+                                <span>INFRAESTRUTURA</span>
+                                <i class="fa-solid fa-grip-lines hover:text-white transition"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="aprenderView" class="flex-1 overflow-y-auto p-6 flex-col gap-6 hidden items-center">
+                    
+                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-lg w-full max-w-4xl flex flex-col gap-8">
+                        <div class="flex justify-between items-center border-b border-slate-700 pb-4">
+                            <h3 class="text-white font-bold text-lg flex items-center gap-2">
+                                <i class="fa-solid fa-microchip text-blue-400"></i> Motor RAG (Processamento de Conhecimento)
+                            </h3>
+                            <span id="rag-status-badge" class="bg-slate-700 text-slate-300 text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-widest border border-slate-600">Aguardando PDF</span>
+                        </div>
+
+                        <div class="relative flex items-center justify-between w-full px-8 mt-2">
+                            <div class="absolute left-16 right-16 top-6 h-1 bg-slate-700 rounded-full z-0"></div>
+                            <div id="pipeline-progress-line" class="absolute left-16 top-6 h-1 bg-blue-500 rounded-full z-0 transition-all duration-700 ease-in-out" style="width: 0%;"></div>
+
+                            <div class="relative z-10 flex flex-col items-center gap-3 w-24">
+                                <div id="step1-icon" class="w-12 h-12 rounded-full bg-slate-700 border-2 border-slate-500 flex items-center justify-center text-slate-400 transition-all duration-500 shadow-lg">
+                                    <i class="fa-solid fa-file-pdf text-lg"></i>
+                                </div>
+                                <span id="step1-text" class="text-[10px] font-bold text-slate-500 tracking-wider text-center uppercase transition-colors">1. Leitura</span>
+                            </div>
+
+                            <div class="relative z-10 flex flex-col items-center gap-3 w-24">
+                                <div id="step2-icon" class="w-12 h-12 rounded-full bg-slate-700 border-2 border-slate-500 flex items-center justify-center text-slate-400 transition-all duration-500 shadow-lg">
+                                    <i class="fa-solid fa-brain text-lg"></i>
+                                </div>
+                                <span id="step2-text" class="text-[10px] font-bold text-slate-500 tracking-wider text-center uppercase transition-colors">2. Chunks (LLM)</span>
+                            </div>
+
+                            <div class="relative z-10 flex flex-col items-center gap-3 w-24">
+                                <div id="step3-icon" class="w-12 h-12 rounded-full bg-slate-700 border-2 border-slate-500 flex items-center justify-center text-slate-400 transition-all duration-500 shadow-lg">
+                                    <i class="fa-solid fa-database text-lg"></i>
+                                </div>
+                                <span id="step3-text" class="text-[10px] font-bold text-slate-500 tracking-wider text-center uppercase transition-colors">3. Vector DB</span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between bg-slate-900/50 p-4 rounded-lg border border-slate-700/50">
+                            <div class="flex items-center gap-6">
+                                <div class="relative w-14 h-14 flex items-center justify-center shrink-0">
+                                    <svg class="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                                        <path class="text-slate-800" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="3" />
+                                        <path id="circular-progress" class="text-blue-500 transition-all duration-500 ease-out" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" stroke-width="3" />
+                                    </svg>
+                                    <span id="progress-text-percent" class="absolute text-[10px] font-bold text-white">0%</span>
+                                </div>
+                                <div class="flex flex-col gap-1">
+                                    <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Status do Serviço</p>
+                                    <p class="text-sm text-slate-300 font-mono" id="current-operation-log">Inativo. Use o clipe para enviar um documento.</p>
+                                </div>
+                            </div>
+                            
+                            <div class="text-right flex flex-col gap-1 border-l border-slate-700 pl-6">
+                                <span class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Fragmentos</span>
+                                <span class="text-xl font-bold text-blue-400 font-mono"><span id="chunks-processed" class="text-white">0</span> / <span id="chunks-total">0</span></span>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between items-center mt-2 pt-4 border-t border-slate-700/50">
+                            <div class="flex gap-2">
+                                <span class="text-[10px] text-slate-600 my-auto mr-2">Simular (Dev):</span>
+                                <button onclick="updateRagPipeline(1, 15, 'Lendo buffer do arquivo...', 0, 50)" class="text-[10px] font-bold bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded">Upload</button>
+                                <button onclick="updateRagPipeline(2, 45, 'Segmentando em chunks semânticos...', 22, 50)" class="text-[10px] font-bold bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded">LLM</button>
+                                <button onclick="updateRagPipeline(3, 85, 'Gerando embeddings na nuvem...', 40, 50)" class="text-[10px] font-bold bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded">DB</button>
+                            </div>
+                            
+                            <div class="flex gap-3">
+                                <button id="btnRagPause" onclick="toggleRagPause()" class="text-[11px] font-bold bg-yellow-900/20 border border-yellow-700/50 hover:bg-yellow-900/50 text-yellow-500 px-4 py-2 rounded transition flex items-center gap-2">
+                                    <i class="fa-solid fa-pause"></i> PAUSAR PROCESSO
+                                </button>
+                                <button id="btnRagResume" onclick="toggleRagPause()" class="hidden text-[11px] font-bold bg-green-900/20 border border-green-700/50 hover:bg-green-900/50 text-green-500 px-4 py-2 rounded transition flex items-center gap-2">
+                                    <i class="fa-solid fa-play"></i> RETOMAR PROCESSO
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <div id="perfilView" class="flex-1 overflow-y-auto p-6 flex-col gap-6 hidden">
+                    <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-lg flex items-center gap-6 relative overflow-hidden">
+                        <div class="absolute right-0 top-0 w-64 h-full bg-blue-500/10 blur-3xl rounded-full translate-x-1/2"></div>
+                        <div class="w-24 h-24 rounded-full bg-gradient-to-tr from-blue-700 to-indigo-500 flex items-center justify-center text-white text-4xl font-bold shadow-xl shadow-blue-900/50 border-4 border-slate-800 z-10">L</div>
+                        <div class="z-10">
+                            <h2 class="text-2xl font-bold text-white flex items-center gap-2">Leonardo (Leo) <i class="fa-solid fa-circle-check text-blue-400 text-sm" title="Admin Autenticado"></i></h2>
+                            <p class="text-slate-400 text-sm font-mono mt-1"><i class="fa-solid fa-terminal text-blue-500"></i> Engenharia Backend & Suporte Técnico</p>
+                            <div class="flex gap-4 mt-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                <span class="flex items-center gap-1"><i class="fa-solid fa-location-dot"></i> Patrocínio, MG</span>
+                                <span class="flex items-center gap-1"><i class="fa-solid fa-building"></i> OnNet Telecom</span>
+                                <span class="flex items-center gap-1"><i class="fa-solid fa-graduation-cap"></i> ADS</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-6 mt-6 pb-6">
+                        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-lg flex flex-col gap-4 relative overflow-hidden">
+                            <h3 class="text-sm font-bold text-white uppercase tracking-widest border-b border-slate-700 pb-2"><i class="fa-solid fa-layer-group text-green-400 mr-2"></i> Arsenal Técnico</h3>
+                            <div class="space-y-4 mt-2 z-10">
+                                <div>
+                                    <div class="flex justify-between text-xs mb-1 font-mono"><span class="text-slate-300">Node.js / TS / Fastify</span><span class="text-green-400">Avançado</span></div>
+                                    <div class="w-full bg-slate-700 rounded-full h-1.5"><div class="bg-green-500 h-1.5 rounded-full shadow-[0_0_8px_#22c55e]" style="width: 85%"></div></div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-xs mb-1 font-mono"><span class="text-slate-300">Linux (Debian) & Docker</span><span class="text-blue-400">Intermediário</span></div>
+                                    <div class="w-full bg-slate-700 rounded-full h-1.5"><div class="bg-blue-500 h-1.5 rounded-full shadow-[0_0_8px_#3b82f6]" style="width: 75%"></div></div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-xs mb-1 font-mono"><span class="text-slate-300">Redes (MikroTik, SSH, VPN)</span><span class="text-purple-400">Intermediário</span></div>
+                                    <div class="w-full bg-slate-700 rounded-full h-1.5"><div class="bg-purple-500 h-1.5 rounded-full shadow-[0_0_8px_#a855f7]" style="width: 70%"></div></div>
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap gap-2 mt-4 z-10 pt-4 border-t border-slate-700/50">
+                                <span class="px-2 py-1 bg-slate-900 text-slate-400 text-[10px] rounded border border-slate-600 font-mono"><i class="fa-solid fa-database"></i> PostgreSQL</span>
+                                <span class="px-2 py-1 bg-slate-900 text-slate-400 text-[10px] rounded border border-slate-600 font-mono"><i class="fa-solid fa-wrench"></i> Mecânica Automotiva</span>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-lg flex flex-col gap-4">
+                            <h3 class="text-sm font-bold text-white uppercase tracking-widest border-b border-slate-700 pb-2"><i class="fa-solid fa-brain text-purple-400 mr-2"></i> Registros de Memória</h3>
+                            <ul class="space-y-4 mt-2 text-sm text-slate-400">
+                                <li class="flex gap-3 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
+                                    <i class="fa-solid fa-network-wired text-blue-400 mt-1"></i>
+                                    <div><strong class="text-slate-200 block text-xs mb-1 tracking-wide uppercase">Homelab & Segurança</strong>Otimização do server headless no Compaq 510, lab de containers e Honeypots.</div>
+                                </li>
+                                <li class="flex gap-3 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
+                                    <i class="fa-solid fa-code-branch text-green-400 mt-1"></i>
+                                    <div><strong class="text-slate-200 block text-xs mb-1 tracking-wide uppercase">ScanIP CLI</strong>Acompanhamento histórico da ferramenta, diagnósticos de rede e portas.</div>
+                                </li>
+                                <li class="flex gap-3 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
+                                    <i class="fa-solid fa-house-user text-yellow-400 mt-1"></i>
+                                    <div><strong class="text-slate-200 block text-xs mb-1 tracking-wide uppercase">Rotina Pessoal</strong>Monitoramento via câmeras IP (Rafael) e assistência com elétrica automotiva.</div>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="controlsFooter" class="px-6 py-2 border-t border-slate-700 flex items-center gap-6 text-[11px] font-bold text-slate-500 bg-slate-800/50 overflow-x-auto scrollbar-hide shrink-0">
+                    <span class="tracking-widest opacity-50 uppercase">Conexão:</span>
+                    <button id="btnNuvem" class="text-blue-400 flex items-center gap-2 transition hover:text-blue-300 whitespace-nowrap"><i class="fa-solid fa-cloud"></i> CÉREBRO (IA)</button>
+                    <button id="btnDebian" class="text-slate-500 flex items-center gap-2 transition hover:text-green-400 whitespace-nowrap"><i class="fa-solid fa-server"></i> DEBIAN (LOCAL)</button>
+                    <button id="btnSnippet" class="text-slate-500 flex items-center gap-2 transition hover:text-yellow-400 whitespace-nowrap"><i class="fa-solid fa-code"></i> SALVAR SNIPPET</button>
+                    <button id="btnIdeias" class="text-slate-500 flex items-center gap-2 transition hover:text-yellow-400 whitespace-nowrap"><i class="fa-solid fa-lightbulb"></i> IDEIAS</button>
+                    <button id="btnAprender" class="text-slate-500 flex items-center gap-2 transition hover:text-purple-400 whitespace-nowrap"><i class="fa-solid fa-brain"></i> APRENDER</button>
+                </div>
+
+                <div id="inputFooter" class="p-4 bg-panelBg border-t border-slate-700 shrink-0">
+                    <input type="file" id="fileUpload" accept=".pdf" style="display: none;">
+                    <div class="relative flex items-center bg-slate-800 rounded-lg border border-slate-600 p-1 focus-within:border-blue-500 transition shadow-inner">
+                        <button id="btnAnexo" class="p-3 text-slate-400 hover:text-white transition" title="Anexar Documento para RAG">
+                            <i class="fa-solid fa-paperclip"></i>
+                        </button>
+                        <input type="text" id="inputMsg" placeholder="Comande a infraestrutura ou questione a IA..." class="flex-1 bg-transparent border-none text-white focus:outline-none p-2 text-sm autocomplete-off">
+                        <button id="btnEnviar" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-md transition font-bold text-sm mr-1">ENVIAR</button>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="w-80 flex flex-col gap-4 overflow-y-auto shrink-0">
+                <div class="bg-panelBg rounded-xl border border-slate-700 p-5 shadow-lg">
+                    <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Módulo de Acesso</h2>
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-slate-700 to-slate-500 flex items-center justify-center text-white text-xl font-bold shadow-md border-2 border-blue-500/50">L</div>
+                        <div>
+                            <p class="text-white font-bold">Leo</p>
+                            <p class="text-[10px] text-blue-400 font-mono uppercase">Admin - Root</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-panelBg rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col">
+                    <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 text-center">Matriz de Habilidades</h3>
+                    <div class="w-full h-56"><canvas id="competencyChart"></canvas></div>
+                </div>
+            </aside>
+        </div>
+
+        <div id="layoutDeepMind" class="flex-1 bg-darkBg rounded-xl border border-slate-700 overflow-hidden shadow-2xl relative hidden w-full h-full">
+            <canvas id="cosmos"></canvas>
+            <div class="vignette"></div>
+
+            <div id="dm-data-panel">
+                <div class="dm-badge" id="dm-p-badge" style="background: #3b82f6; color: white;">CORE</div>
+                <div class="dm-panel-header" id="dm-p-title" style="color: #3b82f6;">Argus Main Node</div>
+                <div id="dm-p-desc" style="margin-top:4px; line-height:1.4; color: #94a3b8;"></div>
             </div>
 
-            <div class="bg-panelBg rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col">
-                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 text-center">Distribuição de Skills</h3>
-                <div class="w-full h-56">
-                    <canvas id="competencyChart"></canvas>
+            <div id="stage"><svg id="svg-connections"></svg></div>
+
+            <div class="absolute bottom-0 left-0 right-0 z-20 p-6 flex items-end justify-between bg-gradient-to-t from-darkBg to-transparent font-mono pointer-events-none">
+                <div class="flex flex-col gap-1.5 w-48">
+                    <div class="text-[9px] tracking-widest text-slate-500 uppercase">Grafo Neural</div>
+                    <div class="text-base text-blue-500">Sincronizado</div>
+                </div>
+                <div class="flex flex-col gap-1.5 w-48 text-right">
+                    <div class="text-[9px] tracking-widest text-slate-500 uppercase">Nós Ativos (Sinapses)</div>
+                    <div class="text-base text-blue-500" id="dm-val-syn">14</div>
                 </div>
             </div>
+        </div>
 
-        </aside>
     </main>
 
     <script>
-        // --- GRÁFICO ---
-        const ctx = document.getElementById('competencyChart').getContext('2d');
+        // =======================================================================
+        // 1. SISTEMA GERAL DE NAVEGAÇÃO E VIEWS
+        // =======================================================================
+        const btnNavDashboard = document.getElementById('btnNavDashboard');
+        const btnNavDeepMind = document.getElementById('btnNavDeepMind');
+        const btnNavPerfil = document.getElementById('btnNavPerfil');
+        
+        const layoutDashboard = document.getElementById('layoutDashboard');
+        const layoutDeepMind = document.getElementById('layoutDeepMind');
+        
+        const controlsFooter = document.getElementById('controlsFooter');
+        const inputFooter = document.getElementById('inputFooter');
+
+        function resetNavButtons() {
+            btnNavDashboard.className = "text-slate-400 hover:text-white hover:bg-slate-800 px-4 py-1 rounded-md text-sm font-medium transition shadow-none";
+            btnNavDeepMind.className = "text-slate-400 hover:text-blue-400 hover:bg-slate-800 px-4 py-1 rounded-md text-sm font-medium transition flex items-center gap-2";
+            btnNavPerfil.className = "text-slate-400 hover:text-white hover:bg-slate-800 px-4 py-1 rounded-md text-sm font-medium transition flex items-center gap-2";
+        }
+
+        btnNavDashboard.onclick = () => {
+            resetNavButtons();
+            btnNavDashboard.className = "bg-blue-600 text-white px-4 py-1 rounded-md text-sm font-medium transition shadow-lg shadow-blue-500/20";
+            layoutDeepMind.classList.add('hidden'); layoutDeepMind.classList.remove('block');
+            layoutDashboard.classList.remove('hidden'); layoutDashboard.classList.add('flex');
+            controlsFooter.classList.remove('hidden'); inputFooter.classList.remove('hidden');
+            document.getElementById('btnNuvem').click(); 
+            isPhysicsRunning = false; 
+        };
+
+        btnNavDeepMind.onclick = () => {
+            resetNavButtons();
+            btnNavDeepMind.className = "bg-blue-600 text-white px-4 py-1 rounded-md text-sm font-medium transition shadow-lg shadow-blue-500/20 flex items-center gap-2";
+            layoutDashboard.classList.add('hidden'); layoutDashboard.classList.remove('flex');
+            layoutDeepMind.classList.remove('hidden'); layoutDeepMind.classList.add('block');
+            initDeepMind(); 
+        };
+
+        btnNavPerfil.onclick = () => {
+            resetNavButtons();
+            btnNavPerfil.className = "bg-blue-600 text-white px-4 py-1 rounded-md text-sm font-medium transition shadow-lg shadow-blue-500/20 flex items-center gap-2";
+            layoutDeepMind.classList.add('hidden'); layoutDeepMind.classList.remove('block');
+            layoutDashboard.classList.remove('hidden'); layoutDashboard.classList.add('flex');
+            controlsFooter.classList.add('hidden'); inputFooter.classList.add('hidden');
+            mostrarView('perfil');
+            isPhysicsRunning = false;
+        };
+
+        const competencyChartCtx = document.getElementById('competencyChart').getContext('2d');
         Chart.defaults.color = '#64748b';
-        new Chart(ctx, {
+        new Chart(competencyChartCtx, {
             type: 'radar',
             data: {
-                labels: ['Node.js', 'Python', 'SQL', 'Linux', 'Redes', 'Arquitetura'],
+                labels: ['Node.js/TS', 'Python', 'PostgreSQL', 'Linux', 'Redes', 'CyberSec'],
                 datasets: [{
-                    data: [85, 90, 80, 85, 75, 80],
+                    data: [85, 40, 80, 85, 75, 50],
                     backgroundColor: 'rgba(59, 130, 246, 0.2)',
                     borderColor: 'rgba(59, 130, 246, 0.8)',
-                    borderWidth: 2,
-                    pointRadius: 3,
-                    pointBackgroundColor: '#3b82f6'
+                    borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#3b82f6'
                 }]
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    r: { ticks: { display: false }, pointLabels: { font: { size: 10 }, color: '#94a3b8' } }
-                },
-                plugins: { legend: { display: false } }
+            options: { responsive: true, maintainAspectRatio: false, scales: { r: { ticks: { display: false }, pointLabels: { font: { size: 10 }, color: '#94a3b8' } } }, plugins: { legend: { display: false } } }
+        });
+
+        const views = { 
+            'nuvem': document.getElementById('chatWindow'), 
+            'debian': document.getElementById('debianView'), 
+            'snippet': document.getElementById('snippetView'), 
+            'ideias': document.getElementById('ideiasView'),
+            'aprender': document.getElementById('aprenderView'), 
+            'perfil': document.getElementById('perfilView') 
+        };
+
+        let alvoAtual = 'nuvem';
+
+        function mostrarView(viewKey) { 
+            Object.values(views).forEach(v => { if(v) { v.classList.add('hidden'); v.classList.remove('flex'); } }); 
+            if (views[viewKey]) { views[viewKey].classList.remove('hidden'); views[viewKey].classList.add('flex'); } 
+        }
+
+        ['Nuvem', 'Debian', 'Snippet', 'Ideias', 'Aprender'].forEach(alvo => {
+            document.getElementById('btn'+alvo).onclick = () => {
+                alvoAtual = alvo.toLowerCase();
+                
+                ['Nuvem', 'Debian', 'Snippet', 'Ideias', 'Aprender'].forEach(t => {
+                    document.getElementById('btn'+t).className = 'text-slate-500 flex items-center gap-2 transition hover:text-slate-300 whitespace-nowrap';
+                });
+                
+                const btnAtivo = document.getElementById('btn'+alvo);
+                if (alvoAtual === 'nuvem') btnAtivo.classList.add('text-blue-400');
+                if (alvoAtual === 'debian') btnAtivo.classList.add('text-green-400');
+                if (alvoAtual === 'snippet' || alvoAtual === 'ideias') btnAtivo.classList.add('text-yellow-400');
+                if (alvoAtual === 'aprender') btnAtivo.classList.add('text-purple-400');
+                
+                const inputMsg = document.getElementById('inputMsg');
+                if(alvoAtual === 'nuvem') inputMsg.placeholder = "Comande a infraestrutura ou questione a IA...";
+                if(alvoAtual === 'debian') inputMsg.placeholder = "Comando Shell (ex: df -h, docker ps)...";
+                if(alvoAtual === 'snippet') inputMsg.placeholder = "Cole o código para arquivamento...";
+                if(alvoAtual === 'ideias' || alvoAtual === 'aprender') inputMsg.placeholder = "Interação gerenciada pelos botões acima.";
+                
+                mostrarView(alvoAtual);
             }
         });
 
-        // --- WEBSOCKET E CHAT ---
-        const socket = io();
-        const chatWindow = document.getElementById('chatWindow');
-        const aprenderView = document.getElementById('aprenderView');
+        // =======================================================================
+        // 2. SISTEMA DE CHAT E UPLOAD
+        // =======================================================================
         const inputMsg = document.getElementById('inputMsg');
         const btnEnviar = document.getElementById('btnEnviar');
+        const fileUpload = document.getElementById('fileUpload');
+        
+        let socket; try { socket = io(); } catch(e) {}
+        if(typeof marked !== 'undefined') marked.setOptions({ breaks: true, gfm: true });
 
-        marked.setOptions({ breaks: true, gfm: true });
-
-        // --- TROCA DE VIEWS ---
-        function mostrarView(view) {
-            chatWindow.classList.add('hidden');
-            chatWindow.classList.remove('flex');
-            aprenderView.classList.add('hidden');
-            aprenderView.classList.remove('flex');
-
-            if (view === 'chat') {
-                chatWindow.classList.remove('hidden');
-                chatWindow.classList.add('flex');
-            } else if (view === 'aprender') {
-                aprenderView.classList.remove('hidden');
-                aprenderView.classList.add('flex');
-            }
-        }
+        function getActiveChatContainer() { return views[alvoAtual] || views['nuvem']; }
 
         function appendMessage(texto, user) {
+            if(alvoAtual === 'ideias' || alvoAtual === 'aprender' || alvoAtual === 'perfil') return; 
+
+            const container = getActiveChatContainer();
             const div = document.createElement('div');
             const isLeo = user === 'Leo';
             
             div.className = isLeo ? 'flex gap-4 max-w-3xl self-end flex-row-reverse mb-6' : 'flex gap-4 max-w-3xl mb-6';
-            const conteudo = isLeo ? `<p>${texto}</p>` : `<div class="markdown-bot">${marked.parse(texto)}</div>`;
+            const conteudo = (isLeo || typeof marked === 'undefined') ? `<p>${texto}</p>` : `<div class="markdown-bot">${marked.parse(texto)}</div>`;
 
-            div.innerHTML = `
-                <div class="w-8 h-8 rounded-full ${isLeo ? 'bg-slate-600' : 'bg-blue-600'} flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">
-                    ${isLeo ? 'L' : '<i class="fa-solid fa-robot"></i>'}
-                </div>
-                <div>
-                    <span class="text-[10px] text-slate-500 font-bold mb-1 block ${isLeo ? 'text-right' : ''}">${user.toUpperCase()}</span>
-                    <div class="${isLeo ? 'bg-userBubble rounded-l-xl rounded-br-xl' : 'bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30'} text-white p-4 shadow-sm text-sm relative">
-                        ${conteudo}
-                    </div>
-                </div>`;
+            let botIcon = '<i class="fa-solid fa-robot"></i>'; let botBg = 'bg-blue-600'; let botMsgBg = 'bg-gradient-to-r from-blue-900 to-indigo-900 border-blue-800/30';
             
             if (!isLeo) {
-                const preBlocks = div.querySelectorAll('pre');
-                preBlocks.forEach(pre => {
-                    const wrapper = document.createElement('div');
-                    wrapper.className = 'relative group mt-2 mb-4';
-                    pre.style.marginBottom = '0';
-                    pre.parentNode.insertBefore(wrapper, pre);
-                    wrapper.appendChild(pre);
-
-                    const btn = document.createElement('button');
-                    btn.className = 'absolute top-2 right-2 bg-slate-700 hover:bg-slate-600 text-slate-300 px-2 py-1 rounded text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity z-10 border border-slate-500/50 shadow-md';
-                    btn.innerHTML = '<i class="fa-regular fa-copy"></i> COPIAR';
-                    
-                    btn.onclick = function() {
-                        const codeElement = pre.querySelector('code');
-                        const textToCopy = codeElement ? codeElement.innerText : pre.innerText;
-
-                        const fallbackCopyTextToClipboard = (text) => {
-                            const textArea = document.createElement("textarea");
-                            textArea.value = text;
-                            document.body.appendChild(textArea);
-                            textArea.select();
-                            try { document.execCommand('copy'); } catch (err) {}
-                            document.body.removeChild(textArea);
-                        };
-
-                        if (navigator.clipboard && window.isSecureContext) {
-                            navigator.clipboard.writeText(textToCopy).catch(() => fallbackCopyTextToClipboard(textToCopy));
-                        } else {
-                            fallbackCopyTextToClipboard(textToCopy);
-                        }
-                        
-                        const originalHtml = btn.innerHTML;
-                        btn.innerHTML = '<i class="fa-solid fa-check text-green-400"></i> COPIADO!';
-                        btn.classList.add('text-green-400');
-                        setTimeout(() => {
-                            btn.innerHTML = originalHtml;
-                            btn.classList.remove('text-green-400');
-                        }, 2000);
-                    };
-                    wrapper.appendChild(btn);
-                });
+                if (alvoAtual === 'debian') { botIcon = '<i class="fa-solid fa-server"></i>'; botBg = 'bg-green-600'; botMsgBg = 'bg-gradient-to-r from-green-900 to-emerald-900 border-green-800/30 font-mono'; } 
+                else if (alvoAtual === 'snippet') { botIcon = '<i class="fa-solid fa-code"></i>'; botBg = 'bg-yellow-600'; botMsgBg = 'bg-gradient-to-r from-yellow-900 to-orange-900 border-yellow-800/30'; }
             }
 
-            chatWindow.appendChild(div);
-            chatWindow.scrollTop = chatWindow.scrollHeight;
+            div.innerHTML = `
+                <div class="w-8 h-8 rounded-full ${isLeo ? 'bg-slate-600 border border-slate-500' : botBg} flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">${isLeo ? 'L' : botIcon}</div>
+                <div>
+                    <span class="text-[10px] text-slate-500 font-bold mb-1 block ${isLeo ? 'text-right' : ''}">${user.toUpperCase()}</span>
+                    <div class="${isLeo ? 'bg-userBubble rounded-l-xl rounded-br-xl' : `${botMsgBg} rounded-r-xl rounded-bl-xl border`} text-white p-4 shadow-sm text-sm relative">${conteudo}</div>
+                </div>`;
+            container.appendChild(div); container.scrollTop = container.scrollHeight;
         }
 
         function mostrarPensando() {
             if (document.getElementById('argus-thinking')) return;
+            const container = getActiveChatContainer();
             const div = document.createElement('div');
-            div.id = 'argus-thinking';
-            div.className = 'flex gap-4 max-w-3xl mb-6 animate-pulse';
-            div.innerHTML = `
-                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs"><i class="fa-solid fa-robot"></i></div>
-                <div>
-                    <span class="text-[10px] text-slate-500 font-bold mb-1 block">ARGUS</span>
-                    <div class="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-r-xl rounded-bl-xl border border-blue-800/30 text-blue-300 p-4 shadow-sm text-sm flex items-center gap-3">
-                        <i class="fa-solid fa-circle-notch fa-spin text-lg"></i> <span class="italic font-medium">Processando...</span>
-                    </div>
-                </div>`;
-            chatWindow.appendChild(div);
-            chatWindow.scrollTop = chatWindow.scrollHeight;
+            div.id = 'argus-thinking'; div.className = 'flex gap-4 max-w-3xl mb-6 animate-pulse';
+            let botIcon = '<i class="fa-solid fa-robot"></i>'; let botBg = 'bg-blue-600';
+            if (alvoAtual === 'debian') { botBg = 'bg-green-600'; botIcon = '<i class="fa-solid fa-server"></i>'; }
+            else if (alvoAtual === 'snippet') { botBg = 'bg-yellow-600'; botIcon = '<i class="fa-solid fa-code"></i>'; }
+
+            div.innerHTML = `<div class="w-8 h-8 rounded-full ${botBg} flex items-center justify-center flex-shrink-0 mt-1 shadow-md text-white font-bold text-xs">${botIcon}</div>
+                <div><span class="text-[10px] text-slate-500 font-bold mb-1 block">ARGUS</span>
+                <div class="bg-gradient-to-r from-slate-800 to-slate-700 rounded-r-xl rounded-bl-xl border border-slate-600 text-slate-300 p-4 shadow-sm text-sm flex items-center gap-3"><i class="fa-solid fa-circle-notch fa-spin text-lg"></i> <span class="italic font-medium">Processando...</span></div></div>`;
+            container.appendChild(div); container.scrollTop = container.scrollHeight;
         }
-
-        function removerPensando() {
-            const ind = document.getElementById('argus-thinking');
-            if (ind) ind.remove();
-        }
-
-        // --- SISTEMA DE ALVOS ---
-        let alvoAtual = 'nuvem';
-        
-        const btnNuvem = document.getElementById('btnNuvem');
-        const btnDebian = document.getElementById('btnDebian');
-        const btnSnippet = document.getElementById('btnSnippet');
-        const btnAprender = document.getElementById('btnAprender');
-
-        function resetarBotoes() {
-            btnNuvem.className = 'text-slate-500 flex items-center gap-2 transition hover:text-blue-300 whitespace-nowrap';
-            btnDebian.className = 'text-slate-500 flex items-center gap-2 transition hover:text-green-400 whitespace-nowrap';
-            btnSnippet.className = 'text-slate-500 flex items-center gap-2 transition hover:text-yellow-400 whitespace-nowrap';
-            btnAprender.className = 'text-slate-500 flex items-center gap-2 transition hover:text-purple-400 whitespace-nowrap';
-        }
-
-        btnNuvem.onclick = () => {
-            alvoAtual = 'nuvem';
-            resetarBotoes();
-            btnNuvem.className = 'text-blue-400 flex items-center gap-2 transition hover:text-blue-300 whitespace-nowrap';
-            inputMsg.placeholder = "Faça uma pergunta ao Cérebro IA (Nuvem ou RAG)...";
-            mostrarView('chat');
-        };
-
-        btnDebian.onclick = () => {
-            alvoAtual = 'debian';
-            resetarBotoes();
-            btnDebian.className = 'text-green-400 flex items-center gap-2 transition whitespace-nowrap';
-            inputMsg.placeholder = "Digite um comando para o kernel (ex: ram, cpu, status)...";
-            mostrarView('chat');
-        };
-
-        btnSnippet.onclick = () => {
-            alvoAtual = 'snippet';
-            resetarBotoes();
-            btnSnippet.className = 'text-yellow-400 flex items-center gap-2 transition whitespace-nowrap';
-            inputMsg.placeholder = "Formato Snippet -> Descrição : Comando/Código";
-            mostrarView('chat');
-        };
-
-        btnAprender.onclick = () => {
-            alvoAtual = 'aprender';
-            resetarBotoes();
-            btnAprender.className = 'text-purple-400 flex items-center gap-2 transition whitespace-nowrap';
-            inputMsg.placeholder = "Formato Rápido -> Tópico : Explicação";
-            mostrarView('aprender');
-        };
+        function removerPensando() { const ind = document.getElementById('argus-thinking'); if (ind) ind.remove(); }
 
         btnEnviar.onclick = () => {
-            const msg = inputMsg.value.trim();
-            if(!msg) return;
-            
+            const msg = inputMsg.value.trim(); if(!msg) return;
+            if(alvoAtual === 'ideias' || alvoAtual === 'aprender') { alert("Ação não permitida via input nesta aba."); inputMsg.value = ''; return; }
             appendMessage(msg, 'Leo');
-            socket.emit('mensagem_web', { texto: msg, alvo: alvoAtual });
-            inputMsg.value = '';
-            
-            if (alvoAtual === 'snippet' || alvoAtual === 'aprender') {
-                btnNuvem.click();
-            } else {
-                mostrarPensando();
-            }
+            if(socket) socket.emit('mensagem_web', { texto: msg, alvo: alvoAtual });
+            inputMsg.value = ''; mostrarPensando();
+            if(!socket) setTimeout(() => { removerPensando(); appendMessage(`Processando: ${alvoAtual}. Servidor offline.`, 'Argus'); }, 1000);
         };
-
         inputMsg.onkeypress = (e) => { if(e.key === 'Enter') btnEnviar.click(); };
-
-        socket.on('status_argus', (d) => { if(d.status === 'pensando') mostrarPensando(); });
-        socket.on('resposta_argus', (dados) => {
-            removerPensando();
-            appendMessage(dados.texto, 'Argus');
-        });
-
-        // --- UPLOAD DE PDFs ---
-        const btnAnexo = document.getElementById('btnAnexo');
-        const fileUpload = document.getElementById('fileUpload');
-
-        btnAnexo.onclick = () => fileUpload.click();
-
-        fileUpload.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            appendMessage(`A preparar documento: **${file.name}**...`, 'Leo');
-            mostrarPensando();
-
-            const formData = new FormData();
-            formData.append('documento', file);
-
-            try {
-                const response = await fetch('/upload', { method: 'POST', body: formData });
-                const result = await response.json();
-                
-                removerPensando();
-                if (response.ok) {
-                    appendMessage(`📄 **Documento na Fila:** \`${file.name}\`\n\n*${result.mensagem}*`, 'Argus');
-                } else {
-                    appendMessage(`❌ **Erro no Upload:** ${result.erro}`, 'Argus');
-                }
-            } catch (err) {
-                removerPensando();
-                appendMessage(`❌ **Falha ao comunicar com o servidor para upload.**`, 'Argus');
-                console.error(err);
-            }
+        
+        document.getElementById('btnAnexo').onclick = () => {
+            if(alvoAtual === 'aprender') fileUpload.click();
+            else { document.getElementById('btnAprender').click(); setTimeout(()=>fileUpload.click(), 300); }
+        };
+        
+        fileUpload.onchange = (e) => {
+            const file = e.target.files[0]; if (!file) return;
+            // Dispara simulação visual do RAG
+            updateRagPipeline(1, 5, `Iniciando leitura do arquivo: ${file.name}...`, 0, 50);
             fileUpload.value = ''; 
         };
 
-        // --- SOCKET: STATUS DE APRENDIZADO ---
-        socket.on('status_aprendizado', (stats) => {
-            const { total, pendentes, processando, concluidos, erros } = stats;
+        // =======================================================================
+        // 3. ABA IDEIAS (SORTABLE / KEEP CLONE)
+        // =======================================================================
+        const ideasGrid = document.getElementById('ideasGrid');
+        if(typeof Sortable !== 'undefined') new Sortable(ideasGrid, { animation: 150, ghostClass: 'sortable-ghost', handle: '.idea-card' });
 
-            let porcentagem = 0;
-            if (total > 0) {
-                porcentagem = Math.round(((concluidos + erros) / total) * 100);
-            }
+        document.getElementById('btnAddIdea').onclick = () => {
+            const title = prompt("Título da Ideia (ou Nome do Projeto):"); if(!title) return;
+            const desc = prompt("Descrição da ideia:"); if(!desc) return;
+            const isNew = confirm("Classificar como NOVO projeto? (OK para Novo, Cancelar para Existente/Outros)");
+            const tag = isNew ? "NOVO PROJETO" : "PROJETO EXISTENTE";
+            const color = isNew ? "border-yellow-500" : "border-blue-500";
+            const textColor = isNew ? "text-yellow-400" : "text-blue-400";
+            const card = document.createElement('div');
+            card.className = `idea-card bg-slate-800 border-l-4 ${color} p-4 rounded-lg shadow-md hover:bg-slate-700/50 transition`;
+            card.innerHTML = `<h4 class="${textColor} font-bold text-sm mb-1 uppercase tracking-tight">${title}</h4>
+                <p class="text-slate-300 text-xs mt-2">${desc}</p>
+                <div class="mt-4 pt-3 border-t border-slate-700 flex justify-between items-center text-[10px] text-slate-500 font-bold">
+                    <span>${tag}</span><i class="fa-solid fa-grip-lines hover:text-white transition"></i></div>`;
+            ideasGrid.prepend(card);
+        };
 
-            const circle = document.getElementById('progress-circle');
-            circle.style.background = `conic-gradient(#4caf50 ${porcentagem}%, #2c2c2c ${porcentagem}%)`;
-            document.getElementById('progress-text').innerText = `${porcentagem}%`;
-            document.getElementById('worker-stats').innerText = `${concluidos + erros} / ${total}`;
-            document.getElementById('worker-errors').innerText = erros;
+        // =======================================================================
+        // 4. LÓGICA DO PIPELINE RAG (APRENDER) + SISTEMA DE PAUSA
+        // =======================================================================
+        let ragState = { step: 0, percent: 0, logMsg: 'Inativo. Envie um PDF.', chunksProc: 0, chunksTot: 0, isPaused: false };
 
-            const statusEl = document.getElementById('worker-status');
-            const stepSalvando = document.getElementById('step-salvando');
+        function updateRagPipeline(step, percent, logMsg, chunksProc, chunksTot) {
+            // Se estiver pausado e tentarem atualizar algo (exceto pela própria função de pausa), bloqueia.
+            if(ragState.isPaused) return;
 
-            if (processando > 0) {
-                statusEl.innerText = 'Rodando ⚙️';
-                statusEl.style.color = '#4caf50';
-                stepSalvando.style.color = '#4caf50';
-            } else if (pendentes > 0) {
-                statusEl.innerText = 'Pausado / Esperando API ⏳';
-                statusEl.style.color = '#ff9800';
-                stepSalvando.style.color = '#aaa';
-            } else if (total > 0 && pendentes === 0 && processando === 0) {
-                statusEl.innerText = 'Concluído ✅';
-                statusEl.style.color = '#2196f3';
-                stepSalvando.style.color = '#2196f3';
+            // Salva o estado atual na memória
+            ragState.step = step; ragState.percent = percent; ragState.logMsg = logMsg; 
+            ragState.chunksProc = chunksProc; ragState.chunksTot = chunksTot;
+
+            document.getElementById('current-operation-log').innerText = logMsg;
+            document.getElementById('progress-text-percent').innerText = Math.round(percent) + '%';
+            document.getElementById('circular-progress').setAttribute('stroke-dasharray', `${percent}, 100`);
+            document.getElementById('chunks-processed').innerText = chunksProc;
+            document.getElementById('chunks-total').innerText = chunksTot;
+
+            let lineWidth = 0; if (step === 2) lineWidth = 50; if (step >= 3) lineWidth = 100;
+            document.getElementById('pipeline-progress-line').style.width = lineWidth + '%';
+
+            const badge = document.getElementById('rag-status-badge');
+            const badgeStates = {
+                0: { text: "Aguardando", cls: "bg-slate-700 text-slate-300 border-slate-600" },
+                1: { text: "Preparando", cls: "bg-blue-900/50 text-blue-400 border-blue-700" },
+                2: { text: "Tokenizando", cls: "bg-purple-900/50 text-purple-400 border-purple-700" },
+                3: { text: "Embeddings", cls: "bg-yellow-900/50 text-yellow-400 border-yellow-700" },
+                4: { text: "Memorizado", cls: "bg-green-900/50 text-green-400 border-green-700" }
+            };
+            let state = badgeStates[step] || badgeStates[0];
+            badge.innerText = state.text;
+            badge.className = `${state.cls} text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-widest border`;
+
+            const stepsConf = [ { id: 'step1', originalIcon: 'fa-file-pdf' }, { id: 'step2', originalIcon: 'fa-brain' }, { id: 'step3', originalIcon: 'fa-database' } ];
+            stepsConf.forEach((s, index) => {
+                const stepNum = index + 1;
+                const iconContainer = document.getElementById(`${s.id}-icon`);
+                const textEl = document.getElementById(`${s.id}-text`);
+                const iconEl = iconContainer.querySelector('i');
+
+                // Reset visual padrão
+                iconContainer.className = 'w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all duration-500 shadow-lg relative z-10 bg-slate-700 border-slate-500 text-slate-400';
+                textEl.className = 'text-[10px] font-bold tracking-wider text-center uppercase transition-colors text-slate-500';
+                iconEl.className = `fa-solid ${s.originalIcon} text-lg`;
+
+                if (stepNum < step || step === 4) {
+                    iconContainer.classList.replace('bg-slate-700', 'bg-green-600'); iconContainer.classList.replace('border-slate-500', 'border-green-400');
+                    iconContainer.classList.replace('text-slate-400', 'text-white'); iconContainer.classList.add('shadow-green-900/50');
+                    textEl.classList.replace('text-slate-500', 'text-green-500'); iconEl.className = 'fa-solid fa-check text-lg';
+                } 
+                else if (stepNum === step) {
+                    iconContainer.classList.replace('bg-slate-700', 'bg-blue-600'); iconContainer.classList.replace('border-slate-500', 'border-blue-400');
+                    iconContainer.classList.replace('text-slate-400', 'text-white'); iconContainer.classList.add('shadow-blue-900/50', 'ring-4', 'ring-blue-500/20', 'animate-pulse');
+                    textEl.classList.replace('text-slate-500', 'text-blue-400');
+                    if(stepNum === 2) iconEl.classList.add('fa-fade');
+                    if(stepNum === 3) iconEl.classList.add('fa-bounce');
+                }
+            });
+        }
+
+        function toggleRagPause() {
+            // Só pode pausar se o processo estiver rodando (step entre 1 e 3)
+            if(ragState.step === 0 || ragState.step === 4) return; 
+
+            ragState.isPaused = !ragState.isPaused;
+            const btnPause = document.getElementById('btnRagPause');
+            const btnResume = document.getElementById('btnRagResume');
+            const badge = document.getElementById('rag-status-badge');
+
+            if (ragState.isPaused) {
+                // Altera UI para Pausado
+                btnPause.classList.add('hidden');
+                btnResume.classList.remove('hidden');
+                
+                badge.innerText = "PAUSADO";
+                badge.className = "bg-orange-900/50 text-orange-400 border border-orange-700 text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-widest";
+                document.getElementById('current-operation-log').innerText = "[!] Processamento RAG suspenso pelo usuário.";
+                
+                // Trava animações atuais sem perder cor
+                document.querySelectorAll('.animate-pulse').forEach(el => {
+                    if(el.id.startsWith('step')) el.classList.add('paused-pulse');
+                });
+                
+                if(socket) socket.emit('rag_action', { action: 'pause' });
+                console.log('-> Backend notificado: PAUSAR RAG');
             } else {
-                statusEl.innerText = 'Fila Vazia';
-                statusEl.style.color = '#888';
-                stepSalvando.style.color = '#aaa';
+                // Retoma UI para o estado salvo
+                btnResume.classList.add('hidden');
+                btnPause.classList.remove('hidden');
+                
+                document.querySelectorAll('.paused-pulse').forEach(el => el.classList.remove('paused-pulse'));
+                
+                // Força destrave do update temporariamente para restaurar visual
+                ragState.isPaused = false; 
+                updateRagPipeline(ragState.step, ragState.percent, "Retomando processamento RAG...", ragState.chunksProc, ragState.chunksTot);
+                
+                if(socket) socket.emit('rag_action', { action: 'resume' });
+                console.log('-> Backend notificado: RETOMAR RAG');
             }
-        });
+        }
+
+
+        // =======================================================================
+        // 5. DEEP MIND (GRAFOS OBSIDIAN)
+        // =======================================================================
+        const DM_THEME = { core: '#3b82f6', dev: '#10b981', infra: '#f59e0b', mem: '#f43f5e', system: '#a855f7' };
+        const GRAPH_DATA = {
+            nodes: [
+                { id: 'argus', label: 'ARGUS CORE', group: 'core', radius: 20, desc: 'Unidade Central de Processamento Lógico e NLP.', fixed: true },
+                { id: 'dev', label: 'Engenharia de Software', group: 'system', radius: 10, desc: 'Cluster de habilidades de desenvolvimento.' },
+                { id: 'infra', label: 'Infra & Redes', group: 'system', radius: 10, desc: 'Conhecimentos de servidores, routing e labs.' },
+                { id: 'mem', label: 'Memória (Leo)', group: 'system', radius: 10, desc: 'Registros do usuário primário.' },
+                { id: 'scanip', label: 'ScanIP CLI', group: 'dev', radius: 7, desc: 'Ferramenta Node.js para diagnóstico de rotas.' },
+                { id: 'node', label: 'Node.js / TS', group: 'dev', radius: 7, desc: 'Ecossistema backend principal.' },
+                { id: 'db', label: 'PostgreSQL', group: 'dev', radius: 7, desc: 'Banco de dados relacional.' },
+                { id: 'debian', label: 'Compaq Server', group: 'infra', radius: 7, desc: 'Servidor Debian headless da rede local.' },
+                { id: 'docker', label: 'Docker Lab', group: 'infra', radius: 7, desc: 'Gerenciamento de containers (Honeypots).' },
+                { id: 'sec', label: 'CiberSegurança', group: 'infra', radius: 7, desc: 'Testes de porta, Nmap, Cowrie.' },
+                { id: 'rafael', label: 'Rafael', group: 'mem', radius: 7, desc: 'Filho. Rotina inclui monitoramento por Câmeras IP.' },
+                { id: 'carros', label: 'Mecânica', group: 'mem', radius: 7, desc: 'Projetos auto: Palio 97 e Clio 2003.' },
+                { id: 'onnet', label: 'OnNet Telecom', group: 'mem', radius: 7, desc: 'Suporte Técnico e Diagnósticos B2C.' },
+                { id: 'estudos', label: 'UniAmérica ADS', group: 'mem', radius: 7, desc: 'Graduação Acadêmica.' }
+            ],
+            links: [
+                { source: 'argus', target: 'dev' }, { source: 'argus', target: 'infra' }, { source: 'argus', target: 'mem' },
+                { source: 'dev', target: 'scanip' }, { source: 'dev', target: 'node' }, { source: 'dev', target: 'db' },
+                { source: 'infra', target: 'debian' }, { source: 'infra', target: 'docker' }, { source: 'infra', target: 'sec' },
+                { source: 'mem', target: 'rafael' }, { source: 'mem', target: 'carros' }, { source: 'mem', target: 'onnet' }, { source: 'mem', target: 'estudos' },
+                { source: 'scanip', target: 'onnet' }, { source: 'debian', target: 'docker' }, { source: 'node', target: 'scanip' }, { source: 'sec', target: 'debian' }
+            ]
+        };
+
+        let dmW, dmH; const dmStage = document.getElementById('stage'); const dmSvg = document.getElementById('svg-connections'); const dmPanel = document.getElementById('dm-data-panel');
+        let isPhysicsRunning = false; let dmInitialized = false; let activeDragNode = null;
+
+        function initDeepMind() {
+            const rect = layoutDeepMind.getBoundingClientRect(); if(rect.width === 0) return; 
+            dmW = rect.width; dmH = rect.height;
+            if(!dmInitialized) { buildGraph(); drawCosmosBg(); dmInitialized = true; }
+            isPhysicsRunning = true; requestAnimationFrame(physicsTick);
+        }
+
+        function buildGraph() {
+            dmStage.querySelectorAll('.obs-node-container').forEach(n => n.remove()); dmSvg.innerHTML = '';
+            GRAPH_DATA.nodes.forEach(n => {
+                if (n.fixed) { n.x = dmW / 2; n.y = dmH / 2; } else { n.x = dmW/2 + (Math.random() - 0.5) * 300; n.y = dmH/2 + (Math.random() - 0.5) * 300; }
+                n.vx = 0; n.vy = 0;
+                const el = document.createElement('div');
+                el.className = 'obs-node-container' + (n.fixed ? ' obs-node-fixed' : ''); el.style.color = DM_THEME[n.group];
+                el.innerHTML = `<div class="obs-node-dot" style="background: currentColor; width: ${n.radius*2}px; height: ${n.radius*2}px;"></div><div class="obs-node-label">${n.label}</div>`;
+                n.el = el; dmStage.appendChild(el);
+                el.addEventListener('mouseenter', () => handleNodeHover(n.id)); el.addEventListener('mouseleave', clearNodeHover);
+                el.addEventListener('mousedown', (e) => { if (!n.fixed) { activeDragNode = n; e.preventDefault(); } });
+            });
+            GRAPH_DATA.links.forEach(l => {
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('class', 'obs-link'); l.el = line; dmSvg.appendChild(line);
+            });
+            window.addEventListener('mousemove', (e) => {
+                if(activeDragNode && isPhysicsRunning) { const rect = dmStage.getBoundingClientRect(); activeDragNode.x = e.clientX - rect.left; activeDragNode.y = e.clientY - rect.top; activeDragNode.vx = 0; activeDragNode.vy = 0; }
+            });
+            window.addEventListener('mouseup', () => { activeDragNode = null; });
+        }
+
+        function physicsTick() {
+            if(!isPhysicsRunning) return;
+            for(let i=0; i<GRAPH_DATA.nodes.length; i++) {
+                for(let j=i+1; j<GRAPH_DATA.nodes.length; j++) {
+                    let n1 = GRAPH_DATA.nodes[i]; let n2 = GRAPH_DATA.nodes[j];
+                    let dx = n1.x - n2.x; let dy = n1.y - n2.y; let distSq = dx*dx + dy*dy;
+                    if(distSq > 0 && distSq < 80000) {
+                        let force = 600 / distSq; let dist = Math.sqrt(distSq);
+                        let fx = (dx/dist) * force; let fy = (dy/dist) * force;
+                        n1.vx += fx; n1.vy += fy; n2.vx -= fx; n2.vy -= fy;
+                    }
+                }
+            }
+            GRAPH_DATA.links.forEach(l => {
+                let src = GRAPH_DATA.nodes.find(n => n.id === l.source); let tgt = GRAPH_DATA.nodes.find(n => n.id === l.target);
+                let dx = tgt.x - src.x; let dy = tgt.y - src.y; let dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                let force = (dist - 180) * 0.02; let fx = (dx/dist) * force; let fy = (dy/dist) * force;
+                src.vx += fx; src.vy += fy; tgt.vx -= fx; tgt.vy -= fy;
+            });
+            GRAPH_DATA.nodes.forEach(n => {
+                if(!n.fixed && n !== activeDragNode) {
+                    n.vx += (dmW/2 - n.x) * 0.0003; n.vy += (dmH/2 - n.y) * 0.0003;
+                    n.vx *= 0.82; n.vy *= 0.82; n.x += n.vx; n.y += n.vy;
+                } else if (n.fixed) { n.x = dmW / 2; n.y = dmH / 2; n.vx = 0; n.vy = 0; }
+                n.el.style.left = n.x + 'px'; n.el.style.top = n.y + 'px';
+            });
+            GRAPH_DATA.links.forEach(l => {
+                let src = GRAPH_DATA.nodes.find(n => n.id === l.source); let tgt = GRAPH_DATA.nodes.find(n => n.id === l.target);
+                l.el.setAttribute('x1', src.x); l.el.setAttribute('y1', src.y); l.el.setAttribute('x2', tgt.x); l.el.setAttribute('y2', tgt.y);
+            });
+            requestAnimationFrame(physicsTick);
+        }
+
+        function handleNodeHover(nodeId) {
+            const node = GRAPH_DATA.nodes.find(n => n.id === nodeId);
+            document.getElementById('dm-p-badge').innerText = node.group; document.getElementById('dm-p-badge').style.backgroundColor = DM_THEME[node.group];
+            document.getElementById('dm-p-title').innerText = node.label; document.getElementById('dm-p-title').style.color = DM_THEME[node.group];
+            document.getElementById('dm-p-desc').innerText = node.desc;
+            dmPanel.classList.add('visible'); dmPanel.style.left = (node.x + node.radius + 15) + 'px'; dmPanel.style.top = (node.y - node.radius - 15) + 'px';
+            let connectedNodes = new Set([nodeId]);
+            GRAPH_DATA.links.forEach(l => { if(l.source === nodeId) connectedNodes.add(l.target); if(l.target === nodeId) connectedNodes.add(l.source); });
+            GRAPH_DATA.nodes.forEach(n => {
+                if(connectedNodes.has(n.id)) { n.el.classList.remove('obs-dimmed'); if(n.id === nodeId) n.el.classList.add('obs-highlight-node'); } 
+                else { n.el.classList.add('obs-dimmed'); n.el.classList.remove('obs-highlight-node'); }
+            });
+            GRAPH_DATA.links.forEach(l => {
+                if(l.source === nodeId || l.target === nodeId) { l.el.classList.remove('obs-link-dimmed'); l.el.classList.add('obs-link-highlight'); l.el.style.stroke = DM_THEME[node.group]; } 
+                else { l.el.classList.add('obs-link-dimmed'); l.el.classList.remove('obs-link-highlight'); l.el.style.stroke = '#475569'; }
+            });
+        }
+
+        function clearNodeHover() {
+            dmPanel.classList.remove('visible');
+            GRAPH_DATA.nodes.forEach(n => n.el.classList.remove('obs-dimmed', 'obs-highlight-node'));
+            GRAPH_DATA.links.forEach(l => { l.el.classList.remove('obs-link-dimmed', 'obs-link-highlight'); l.el.style.stroke = '#475569'; });
+        }
+
+        function drawCosmosBg() {
+            const canvas = document.getElementById('cosmos'); const ctx = canvas.getContext('2d'); canvas.width = dmW; canvas.height = dmH;
+            ctx.clearRect(0,0,dmW,dmH); ctx.fillStyle = '#64748b';
+            for(let i=0; i<200; i++) { ctx.globalAlpha = Math.random() * 0.3 + 0.1; ctx.fillRect(Math.random()*dmW, Math.random()*dmH, 1.5, 1.5); }
+        }
+
+        window.addEventListener('resize', () => { if(!layoutDeepMind.classList.contains('hidden')) { dmW = layoutDeepMind.getBoundingClientRect().width; dmH = layoutDeepMind.getBoundingClientRect().height; drawCosmosBg(); } });
     </script>
 </body>
 </html>

@@ -6,7 +6,13 @@ import { historico } from './database.js';
 const PYTHON = path.join(os.homedir(), 'argus/venv/bin/python3');
 const SCRIPT = path.join(os.homedir(), 'argus/scripts/brain.py');
 
-function chamarPython(payload: object): Promise<string> {
+export interface BrainResult {
+    status:   'success' | 'error';
+    response?: string;
+    message?:  string;
+}
+
+function chamarPython(payload: object): Promise<BrainResult> {
     return new Promise((resolve, reject) => {
         const processo = spawn(PYTHON, [SCRIPT], { env: process.env });
 
@@ -21,11 +27,12 @@ function chamarPython(payload: object): Promise<string> {
 
         processo.on('close', (code) => {
             if (stderr) console.error(`[ARGUS Brain] ${stderr.trim()}`);
-            if (code !== 0) return reject(new Error(`Processo Python encerrou com código ${code}`));
+            if (code !== 0) {
+                return reject(new Error(`Processo Python encerrou com código ${code}`));
+            }
             try {
-                const result = JSON.parse(stdout);
-                if (result.status === 'success') resolve(result.response);
-                else reject(new Error(result.message));
+                const result = JSON.parse(stdout) as BrainResult;
+                resolve(result);
             } catch {
                 reject(new Error(`Falha ao parsear resposta do Python: ${stdout}`));
             }
@@ -35,17 +42,31 @@ function chamarPython(payload: object): Promise<string> {
     });
 }
 
-export async function askBrain(texto: string, sessaoId: string): Promise<string> {
+export async function chamarBrainDireto(payload: object): Promise<BrainResult> {
+    return chamarPython(payload);
+}
+
+export async function askBrainComHistorico(
+    texto: string,
+    sessaoId: string,
+    contextoRag = '',
+): Promise<string> {
     const historicoSessao = historico.getSessao(sessaoId, 20);
 
     try {
-        const resposta = await chamarPython({
-            tipo: 'chat',
-            text: texto,
-            historico: historicoSessao,
+        const result = await chamarPython({
+            tipo:        'chat',
+            text:        texto,
+            historico:   historicoSessao,
+            contexto_rag: contextoRag,
         });
 
-        historico.add(sessaoId, 'user', texto);
+        if (result.status === 'error') {
+            return `Erro interno: ${result.message ?? 'sem detalhe'}`;
+        }
+
+        const resposta = result.response ?? '';
+        historico.add(sessaoId, 'user',      texto);
         historico.add(sessaoId, 'assistant', resposta);
 
         return resposta;
@@ -53,8 +74,4 @@ export async function askBrain(texto: string, sessaoId: string): Promise<string>
         console.error(`[ARGUS BrainBridge] Falha:`, error.message);
         return `Erro de conexão interna: ${error.message}`;
     }
-}
-
-export async function chamarBrainDireto(payload: object): Promise<any> {
-    return chamarPython(payload);
 }
